@@ -115,9 +115,9 @@ func (d *decoder) WriteSample(in Sample) error {
 
 	returnData := d.buf[:n]
 	if channels < d.targetChannels {
-		returnData = d.stereoToMono(returnData)
-	} else if channels > d.targetChannels {
 		returnData = d.monoToStereo(returnData)
+	} else if channels > d.targetChannels {
+		returnData = d.stereoToMono(returnData)
 	}
 
 	return d.w.WriteSample(returnData)
