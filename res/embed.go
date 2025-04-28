@@ -3,6 +3,7 @@ package res
 import (
 	"bytes"
 	_ "embed"
+	"fmt"
 	"io"
 
 	"github.com/jfreymuth/oggvorbis"
@@ -21,17 +22,17 @@ var WrongPinOgg []byte
 
 const SampleRate = 48000
 
-func ReadOggAudioFile(data []byte) []media.PCM16Sample {
-	const perFrame = SampleRate / media.DefFramesPerSec
+func ReadOggAudioFile(data []byte, sampleRate int, channels int) []media.PCM16Sample {
+	perFrame := sampleRate / media.DefFramesPerSec
 	r, err := oggvorbis.NewReader(bytes.NewReader(data))
 	if err != nil {
 		panic(err)
 	}
-	if r.SampleRate() != SampleRate {
-		panic("unexpected sample rate")
+	if r.SampleRate() != sampleRate {
+		panic(fmt.Sprintf("unexpected sample rate, expected %d, got %d", sampleRate, r.SampleRate()))
 	}
-	if r.Channels() != 1 {
-		panic("expected mono audio")
+	if r.Channels() != channels {
+		panic(fmt.Sprintf("unexpected number of channels, expected %d, got %d", channels, r.Channels()))
 	}
 	// Frames in the source file may be shorter,
 	// so we collect all samples and split them to frames again.

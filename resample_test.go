@@ -76,7 +76,7 @@ func TestResample(t *testing.T) {
 		srcFileWebm = "resample.src.mka"
 		srcRate     = res.SampleRate
 	)
-	srcFrames := res.ReadOggAudioFile(testdata.TestAudioOgg)
+	srcFrames := res.ReadOggAudioFile(testdata.TestAudioOgg, res.SampleRate, 1)
 	gotSrc := writePCM16s(t, srcFile, srcFrames)
 	writePCM16sWebm(t, srcFileWebm, srcRate, srcFrames)
 	require.True(t, gotSrc == "c774af95" || gotSrc == "b04a6a1f")
@@ -201,7 +201,7 @@ func TestResampleLeak(t *testing.T) {
 		srcFileWebm = "resample.src.mka"
 		srcRate     = res.SampleRate
 	)
-	srcFrames := res.ReadOggAudioFile(testdata.TestAudioOgg)
+	srcFrames := res.ReadOggAudioFile(testdata.TestAudioOgg, res.SampleRate, 1)
 	gotSrc := writePCM16s(t, srcFile, srcFrames)
 	writePCM16sWebm(t, srcFileWebm, srcRate, srcFrames)
 	require.True(t, gotSrc == "c774af95" || gotSrc == "b04a6a1f")
