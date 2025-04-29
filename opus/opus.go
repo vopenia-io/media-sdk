@@ -101,6 +101,7 @@ func (d *decoder) WriteSample(in Sample) error {
 	if err != nil {
 		return err
 	}
+
 	n, err := d.dec.Decode(in, d.buf)
 	if err != nil {
 		// Some workflows (concatenating opus files) can cause a suprious decoding error, so ignore small amount of corruption errors
@@ -115,31 +116,12 @@ func (d *decoder) WriteSample(in Sample) error {
 
 	returnData := d.buf[:n]
 	if channels < d.targetChannels {
-		returnData = d.monoToStereo(returnData)
+		returnData = monoToStereo(returnData)
 	} else if channels > d.targetChannels {
-		returnData = d.stereoToMono(returnData)
+		returnData = stereoToMono(returnData)
 	}
 
 	return d.w.WriteSample(returnData)
-}
-
-func (d *decoder) monoToStereo(in media.PCM16Sample) media.PCM16Sample {
-	// duplicate mono samples to both channels
-	out := make(media.PCM16Sample, len(in)*2)
-	for i := range in {
-		out[i*2] = in[i]
-		out[i*2+1] = in[i]
-	}
-	return out
-}
-
-func (d *decoder) stereoToMono(in media.PCM16Sample) media.PCM16Sample {
-	// average stereo samples to mono
-	out := make(media.PCM16Sample, len(in)/2)
-	for i := range out {
-		out[i] = (in[i*2] + in[i*2+1]) / 2
-	}
-	return out
 }
 
 func (d *decoder) resetForSample(in Sample) (int, error) {
@@ -193,4 +175,25 @@ func (e *encoder) Close() error {
 
 func NewWebmWriter(w io.WriteCloser, sampleRate int, sampleDur time.Duration) media.WriteCloser[Sample] {
 	return webm.NewWriter[Sample](w, "A_OPUS", 2, sampleRate, sampleDur)
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+
+func monoToStereo(in media.PCM16Sample) media.PCM16Sample {
+	// duplicate mono samples to both channels
+	out := make(media.PCM16Sample, len(in)*2)
+	for i := range in {
+		out[i*2] = in[i]
+		out[i*2+1] = in[i]
+	}
+	return out
+}
+
+func stereoToMono(in media.PCM16Sample) media.PCM16Sample {
+	// average stereo samples to mono
+	out := make(media.PCM16Sample, len(in)/2)
+	for i := range out {
+		out[i] = (in[i*2] + in[i*2+1]) / 2
+	}
+	return out
 }
