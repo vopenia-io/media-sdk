@@ -20,8 +20,6 @@ github.com/klauspost/cpuid/v2 v2.2.10 h1:tBs3QSyvjDyFTq3uoc/9xFpCuOsJQFNPiAhYdw2
 github.com/klauspost/cpuid/v2 v2.2.10/go.mod h1:hqwkgyIinND0mEev00jJYCxPNVRVXFQeu1XKlok6oO0=
 github.com/livekit/protocol v1.36.2-0.20250415074849-d67a6a9f9604 h1:Q4jPO+ujNt40XWUbo3sg69rGhypmKXvWe3Z7gpCiiNg=
 github.com/livekit/protocol v1.36.2-0.20250415074849-d67a6a9f9604/go.mod h1:WrT/CYRxtMNOVUjnIPm5OjWtEkmreffTeE1PRZwlRg4=
-github.com/livekit/server-sdk-go/v2 v2.6.0 h1:2GyjZH+6c3copXJ1L45h9DNnBdBUUO0WM6bnnuOfl18=
-github.com/livekit/server-sdk-go/v2 v2.6.0/go.mod h1:Crq9MFF5XHd0GroYcax5izatxI8rnCtbRQYsIWGvkQY=
 github.com/pion/interceptor v0.1.37 h1:aRA8Zpab/wE7/c0O3fh1PqY0AJI3fCSEM5lRWJVorwI=
 github.com/pion/interceptor v0.1.37/go.mod h1:JzxbJ4umVTlZAf+/utHzNesY8tmRkM2lVmkS82TTj8Y=
 github.com/pion/logging v0.2.3 h1:gHuf0zpoh1GW67Nr6Gj4cv5Z9ZscU7g/EaoC/Ke/igI=
