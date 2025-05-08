@@ -21,7 +21,7 @@ import (
 	"net/netip"
 )
 
-var ListenErr = errors.New("failed to listen on udp port")
+var ErrListenFailed = errors.New("failed to listen on udp port")
 
 func ListenUDPPortRange(portMin, portMax int, ip netip.Addr) (*net.UDPConn, error) {
 	if portMin == 0 && portMax == 0 {
@@ -42,7 +42,7 @@ func ListenUDPPortRange(portMin, portMax int, ip netip.Addr) (*net.UDPConn, erro
 	}
 
 	if i > j {
-		return nil, ListenErr
+		return nil, ErrListenFailed
 	}
 
 	portStart := rand.Intn(portMax-portMin+1) + portMin
@@ -62,5 +62,5 @@ func ListenUDPPortRange(portMin, portMax int, ip netip.Addr) (*net.UDPConn, erro
 			break
 		}
 	}
-	return nil, ListenErr
+	return nil, ErrListenFailed
 }

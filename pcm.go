@@ -126,8 +126,7 @@ func NewPCM16BufferReader(buf PCM16Sample) Reader[PCM16Sample] {
 }
 
 type bufferReaderPCM16 struct {
-	buf        PCM16Sample
-	sampleRate int
+	buf PCM16Sample
 }
 
 func (b *bufferReaderPCM16) ReadSample(data PCM16Sample) (int, error) {
