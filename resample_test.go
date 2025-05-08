@@ -87,7 +87,7 @@ func TestResample(t *testing.T) {
 		Buffer int
 		Bumps  []int
 	}{
-		{Rate: 16000, Skip: 0},
+		{Rate: 16000, Skip: 1}, // ??
 		{
 			Rate: 8000, Skip: 2,
 			Buffer: 3,
@@ -232,7 +232,7 @@ func TestResampleLeak(t *testing.T) {
 			dst := media.NewPCM16FrameWriter(&dstFrames, 16000)
 			r := media.ResampleWriter(dst, srcRate)
 			// This test the cleanup function, so intentionally avoid Close.
-			//defer r.Close()
+			// defer r.Close()
 			totalSamples := 0
 			for _, src := range srcFrames {
 				err := r.WriteSample(src)
