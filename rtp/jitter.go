@@ -1,4 +1,4 @@
-// Copyright 2024 LiveKit, Inc.
+// Copyright 2025 LiveKit, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -60,7 +60,12 @@ func (r *jitterHandler) run() {
 	for sample := range r.out {
 		for _, pkt := range sample {
 			if err := r.h.HandleRTP(&pkt.Header, pkt.Payload); err != nil {
-				r.err <- err
+				select {
+				case r.err <- err:
+					// error pushed
+				default:
+					// error channel is full, don't block
+				}
 			}
 		}
 	}
