@@ -81,6 +81,9 @@ func (b *Buffer) UpdateLatency(latency time.Duration) {
 	defer b.mu.Unlock()
 
 	b.latency = latency
+	if b.head != nil {
+		b.timer.Reset(time.Until(b.head.received.Add(latency)))
+	}
 }
 
 func (b *Buffer) Push(pkt *rtp.Packet) {
