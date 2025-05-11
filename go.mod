@@ -9,7 +9,7 @@ require (
 	github.com/frostbyte73/core v0.1.1
 	github.com/gotranspile/g722 v0.0.0-20240123003956-384a1bb16a19
 	github.com/jfreymuth/oggvorbis v1.0.5
-	github.com/livekit/protocol v1.36.2-0.20250415074849-d67a6a9f9604
+	github.com/livekit/protocol v1.38.1-0.20250511051327-eb5e002fe0bd
 	github.com/pion/interceptor v0.1.37
 	github.com/pion/rtp v1.8.13
 	github.com/pion/sdp/v3 v3.0.11
@@ -22,9 +22,10 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/gammazero/deque v1.0.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/jfreymuth/vorbis v1.0.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
-	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 // indirect
+	github.com/kr/pretty v0.1.0 // indirect
 	github.com/pion/logging v0.2.3 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.15 // indirect
@@ -36,8 +37,8 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.32.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
+	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
