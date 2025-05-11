@@ -9,7 +9,7 @@ require (
 	github.com/frostbyte73/core v0.1.1
 	github.com/gotranspile/g722 v0.0.0-20240123003956-384a1bb16a19
 	github.com/jfreymuth/oggvorbis v1.0.5
-	github.com/livekit/protocol v1.38.1-0.20250511051327-eb5e002fe0bd
+	github.com/livekit/protocol v1.38.1-0.20250511053429-f8ea8179871e
 	github.com/pion/interceptor v0.1.37
 	github.com/pion/rtp v1.8.13
 	github.com/pion/sdp/v3 v3.0.11
