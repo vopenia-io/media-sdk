@@ -7,6 +7,7 @@ require github.com/stretchr/testify v1.10.0
 require (
 	github.com/at-wat/ebml-go v0.17.1
 	github.com/frostbyte73/core v0.1.1
+	github.com/go-logr/logr v1.4.2
 	github.com/gotranspile/g722 v0.0.0-20240123003956-384a1bb16a19
 	github.com/jfreymuth/oggvorbis v1.0.5
 	github.com/livekit/protocol v1.38.1-0.20250511053429-f8ea8179871e
@@ -21,7 +22,6 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/gammazero/deque v1.0.0 // indirect
-	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/jfreymuth/vorbis v1.0.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
