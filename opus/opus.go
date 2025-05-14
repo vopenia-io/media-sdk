@@ -114,7 +114,7 @@ func (d *decoder) WriteSample(in Sample) error {
 	}
 	d.successiveErrorCount = 0
 
-	returnData := d.buf[:n]
+	returnData := d.buf[:n*channels]
 	if channels < d.targetChannels {
 		returnData = monoToStereo(returnData)
 	} else if channels > d.targetChannels {
