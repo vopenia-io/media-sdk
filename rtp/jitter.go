@@ -30,7 +30,7 @@ func HandleJitter(h Handler) Handler {
 	out := make(chan []*rtp.Packet, 10)
 	handler := &jitterHandler{
 		h:   h,
-		buf: jitter.NewBuffer(audioDepacketizer{}, jitterMaxLatency, out, nil),
+		buf: jitter.NewBuffer(audioDepacketizer{}, jitterMaxLatency, out),
 		out: out,
 		err: make(chan error, 1),
 	}
