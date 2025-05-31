@@ -182,6 +182,7 @@ type sampleWriter[T ~[]byte] struct {
 	w          MediaSampleWriter
 	sampleRate int
 	sampleDur  time.Duration
+	lastWrite  time.Time
 }
 
 func (w *sampleWriter[T]) String() string {
@@ -199,7 +200,17 @@ func (w *sampleWriter[T]) Close() error {
 func (w *sampleWriter[T]) WriteSample(in T) error {
 	data := make([]byte, len(in))
 	copy(data, in)
-	return w.w.WriteSample(media.Sample{Data: data, Duration: w.sampleDur})
+
+	var droppedPackets uint16
+	if !w.lastWrite.IsZero() {
+		timeSinceLastWrite := time.Since(w.lastWrite)
+		if timeSinceLastWrite > w.sampleDur {
+			droppedPackets = uint16((timeSinceLastWrite - w.sampleDur) / w.sampleDur)
+		}
+	}
+
+	w.lastWrite = time.Now()
+	return w.w.WriteSample(media.Sample{Data: data, Duration: w.sampleDur, PrevDroppedPackets: droppedPackets})
 }
 
 // MonoToStereo converts mono PCM from src to stereo PCM in dst.
