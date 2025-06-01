@@ -205,8 +205,8 @@ func (w *sampleWriter[T]) WriteSample(in T) error {
 	if !w.lastWrite.IsZero() {
 		timeSinceLastWrite := time.Since(w.lastWrite)
 		tolerance := w.sampleDur / 10
-		if timeSinceLastWrite > w.sampleDur+tolerance {
-			droppedPackets = uint16((timeSinceLastWrite - w.sampleDur) / w.sampleDur)
+		if timeSinceLastWrite > (w.sampleDur + tolerance) {
+			droppedPackets = uint16((timeSinceLastWrite - (w.sampleDur - tolerance)) / w.sampleDur)
 		}
 	}
 
