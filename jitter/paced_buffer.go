@@ -192,7 +192,7 @@ func NewPacedBuffer(
 	pb.buffer = NewBuffer(
 		depacketizer,
 		latency,
-		PacketFunc(PacketFunc(pb.handleSample)),
+		pb.handleSample,
 		opts...,
 	)
 
