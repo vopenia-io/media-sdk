@@ -36,6 +36,7 @@ import (
 var (
 	ErrNoCommonMedia  = errors.New("common audio codec not found")
 	ErrNoCommonCrypto = errors.New("no common encryption profiles")
+	ErrNoCommonVideo  = errors.New("common video codec not found")
 )
 
 type Encryption int
@@ -87,6 +88,11 @@ func OfferCodecs() []CodecInfo {
 type MediaDesc struct {
 	Codecs         []CodecInfo
 	DTMFType       byte // set to 0 if there's no DTMF
+	CryptoProfiles []srtp.Profile
+}
+
+type VideoMediaDesc struct {
+	Codecs         []CodecInfo
 	CryptoProfiles []srtp.Profile
 }
 
@@ -164,6 +170,64 @@ func OfferMedia(rtpListenerPort int, encrypted Encryption) (MediaDesc, *sdp.Medi
 		}, nil
 }
 
+func OfferVideoMedia(rtpListenerPort int, encrypted Encryption) (VideoMediaDesc, *sdp.MediaDescription, error) {
+	codecs := OfferCodecs()
+	attrs := make([]sdp.Attribute, 0, len(codecs)+2)
+	formats := make([]string, 0, len(codecs))
+
+	// Filter for video codecs only
+	videoCodecs := make([]CodecInfo, 0)
+	for _, codec := range codecs {
+		// Check if this is a video codec (H.264, VP8, VP9, etc.)
+		name := codec.Codec.Info().SDPName
+		if strings.HasPrefix(name, "H264") || strings.HasPrefix(name, "VP8") || strings.HasPrefix(name, "VP9") {
+			videoCodecs = append(videoCodecs, codec)
+			styp := strconv.Itoa(int(codec.Type))
+			formats = append(formats, styp)
+			attrs = append(attrs, sdp.Attribute{
+				Key:   "rtpmap",
+				Value: styp + " " + codec.Codec.Info().SDPName,
+			})
+		}
+	}
+
+	if len(videoCodecs) == 0 {
+		return VideoMediaDesc{}, nil, ErrNoCommonVideo
+	}
+
+	var cryptoProfiles []srtp.Profile
+	if encrypted != EncryptionNone {
+		var err error
+		cryptoProfiles, err = srtp.DefaultProfiles()
+		if err != nil {
+			return VideoMediaDesc{}, nil, err
+		}
+		attrs = appendCryptoProfiles(attrs, cryptoProfiles)
+	}
+
+	attrs = append(attrs, []sdp.Attribute{
+		{Key: "sendrecv"},
+	}...)
+
+	proto := "AVP"
+	if encrypted != EncryptionNone {
+		proto = "SAVP"
+	}
+
+	return VideoMediaDesc{
+			Codecs:         videoCodecs,
+			CryptoProfiles: cryptoProfiles,
+		}, &sdp.MediaDescription{
+			MediaName: sdp.MediaName{
+				Media:   "video",
+				Port:    sdp.RangedPort{Value: rtpListenerPort},
+				Protos:  []string{"RTP", proto},
+				Formats: formats,
+			},
+			Attributes: attrs,
+		}, nil
+}
+
 func AnswerMedia(rtpListenerPort int, audio *AudioConfig, crypt *srtp.Profile) *sdp.MediaDescription {
 	// Static compiler check for frame duration hardcoded below.
 	var _ = [1]struct{}{}[20*time.Millisecond-rtp.DefFrameDur]
@@ -193,6 +257,32 @@ func AnswerMedia(rtpListenerPort int, audio *AudioConfig, crypt *srtp.Profile) *
 	return &sdp.MediaDescription{
 		MediaName: sdp.MediaName{
 			Media:   "audio",
+			Port:    sdp.RangedPort{Value: rtpListenerPort},
+			Protos:  []string{"RTP", proto},
+			Formats: formats,
+		},
+		Attributes: attrs,
+	}
+}
+
+func AnswerVideoMedia(rtpListenerPort int, video *VideoConfig, crypt *srtp.Profile) *sdp.MediaDescription {
+	attrs := make([]sdp.Attribute, 0, 4)
+	attrs = append(attrs, sdp.Attribute{
+		Key: "rtpmap", Value: fmt.Sprintf("%d %s", video.Type, video.Codec.Info().SDPName),
+	})
+	formats := []string{strconv.Itoa(int(video.Type))}
+
+	proto := "AVP"
+	if crypt != nil {
+		proto = "SAVP"
+		attrs = appendCryptoProfiles(attrs, []srtp.Profile{*crypt})
+	}
+	attrs = append(attrs, []sdp.Attribute{
+		{Key: "sendrecv"},
+	}...)
+	return &sdp.MediaDescription{
+		MediaName: sdp.MediaName{
+			Media:   "video",
 			Port:    sdp.RangedPort{Value: rtpListenerPort},
 			Protos:  []string{"RTP", proto},
 			Formats: formats,
@@ -249,6 +339,54 @@ func NewOffer(publicIp netip.Addr, rtpListenerPort int, encrypted Encryption) (*
 		Addr:      netip.AddrPortFrom(publicIp, uint16(rtpListenerPort)),
 		MediaDesc: m,
 	}, nil
+}
+
+func NewOfferWithVideo(publicIp netip.Addr, audioPort, videoPort int, encrypted Encryption) (*Offer, *VideoMediaDesc, error) {
+	sessId := rand.Uint64()
+
+	// Generate audio media
+	audioDesc, audioMedia, err := OfferMedia(audioPort, encrypted)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Generate video media
+	videoDesc, videoMedia, err := OfferVideoMedia(videoPort, encrypted)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	offer := sdp.SessionDescription{
+		Version: 0,
+		Origin: sdp.Origin{
+			Username:       "-",
+			SessionID:      sessId,
+			SessionVersion: sessId,
+			NetworkType:    "IN",
+			AddressType:    "IP4",
+			UnicastAddress: publicIp.String(),
+		},
+		SessionName: "LiveKit",
+		ConnectionInformation: &sdp.ConnectionInformation{
+			NetworkType: "IN",
+			AddressType: "IP4",
+			Address:     &sdp.Address{Address: publicIp.String()},
+		},
+		TimeDescriptions: []sdp.TimeDescription{
+			{
+				Timing: sdp.Timing{
+					StartTime: 0,
+					StopTime:  0,
+				},
+			},
+		},
+		MediaDescriptions: []*sdp.MediaDescription{audioMedia, videoMedia},
+	}
+	return &Offer{
+		SDP:       offer,
+		Addr:      netip.AddrPortFrom(publicIp, uint16(audioPort)),
+		MediaDesc: audioDesc,
+	}, &videoDesc, nil
 }
 
 func (d *Offer) Answer(publicIp netip.Addr, rtpListenerPort int, enc Encryption) (*Answer, *MediaConfig, error) {
@@ -473,6 +611,7 @@ type MediaConfig struct {
 	Local  netip.AddrPort
 	Remote netip.AddrPort
 	Audio  AudioConfig
+	Video  *VideoConfig
 	Crypto *srtp.Config
 }
 
@@ -480,6 +619,11 @@ type AudioConfig struct {
 	Codec    rtp.AudioCodec
 	Type     byte
 	DTMFType byte
+}
+
+type VideoConfig struct {
+	Codec media.Codec
+	Type  byte
 }
 
 func SelectAudio(desc MediaDesc, answer bool) (*AudioConfig, error) {
@@ -509,6 +653,36 @@ func SelectAudio(desc MediaDesc, answer bool) (*AudioConfig, error) {
 		Codec:    audioCodec,
 		Type:     audioType,
 		DTMFType: desc.DTMFType,
+	}, nil
+}
+
+func SelectVideo(desc VideoMediaDesc, answer bool) (*VideoConfig, error) {
+	var (
+		priority   int
+		videoCodec media.Codec
+		videoType  byte
+	)
+	for _, c := range desc.Codecs {
+		// Check if this is a video codec
+		name := c.Codec.Info().SDPName
+		if !strings.HasPrefix(name, "H264") && !strings.HasPrefix(name, "VP8") && !strings.HasPrefix(name, "VP9") {
+			continue
+		}
+		if videoCodec == nil || c.Codec.Info().Priority > priority {
+			videoType = c.Type
+			videoCodec = c.Codec
+			priority = c.Codec.Info().Priority
+		}
+		if answer {
+			break
+		}
+	}
+	if videoCodec == nil {
+		return nil, ErrNoCommonVideo
+	}
+	return &VideoConfig{
+		Codec: videoCodec,
+		Type:  videoType,
 	}, nil
 }
 
