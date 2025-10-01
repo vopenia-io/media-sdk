@@ -147,6 +147,10 @@ type readStream struct {
 	r *srtp.ReadStreamSRTP
 }
 
+func (r readStream) L() logger.Logger {
+	return nil
+}
+
 func (r readStream) ReadRTP(h *prtp.Header, payload []byte) (int, error) {
 	buf := payload
 	n, err := r.r.Read(buf)

@@ -44,10 +44,17 @@ func CodecByPayloadType(typ byte) media.Codec {
 	return codecByType[typ]
 }
 
+type TrackCodec[T media.Frame] interface {
+	media.Codec
+	EncodeRTP(w *Stream) media.WriteCloser[T]
+	DecodeRTP(w media.Writer[T], typ byte) Handler
+}
+
+// AUDIO CODECS
+
 type AudioCodec interface {
 	media.Codec
-	EncodeRTP(w *Stream) media.PCM16Writer
-	DecodeRTP(w media.Writer[media.PCM16Sample], typ byte) Handler
+	TrackCodec[media.PCM16Sample]
 }
 
 type AudioEncoder[S BytesFrame] interface {
@@ -115,7 +122,66 @@ func (c *audioCodec[S]) DecodeRTP(w media.Writer[media.PCM16Sample], typ byte) H
 		if ext == "" {
 			ext = "raw"
 		}
-		s = media.DumpWriter[S](ext, name, media.NopCloser(s))
+		s = media.DumpWriter(ext, name, media.NopCloser(s))
+	}
+	return NewMediaStreamIn(s)
+}
+
+// VIDEO CODECS
+
+type VideoCodec interface {
+	media.Codec
+	TrackCodec[media.FrameSample]
+}
+
+type VideoEncoder[S BytesFrame] interface {
+	VideoCodec
+	Decode(writer media.FrameWriter) media.WriteCloser[S]
+	Encode(writer media.WriteCloser[S]) media.FrameWriter
+}
+
+type videoCodec[S BytesFrame] struct {
+	info   media.CodecInfo
+	encode func(writer media.WriteCloser[S]) media.FrameWriter
+	decode func(writer media.FrameWriter) media.WriteCloser[S] // currently not used
+}
+
+func NewVideoCodec[S BytesFrame](info media.CodecInfo, encode func(writer media.WriteCloser[S]) media.FrameWriter, decode func(writer media.FrameWriter) media.WriteCloser[S]) VideoCodec {
+	return &videoCodec[S]{
+		info:   info,
+		encode: encode,
+		decode: decode, // currently not used
+	}
+}
+
+func (c *videoCodec[S]) Info() media.CodecInfo {
+	return c.info
+}
+
+func (c *videoCodec[S]) EncodeRTP(w *Stream) media.FrameWriter {
+	var s media.WriteCloser[S] = NewMediaStreamOut[S](w, c.info.SampleRate)
+	if mediaDumpToFile {
+		id := mediaID.Add(1)
+		name := fmt.Sprintf("sip_rtp_out_%d", id)
+		ext := c.info.FileExt
+		if ext == "" {
+			ext = "raw"
+		}
+		s = media.DumpWriter(ext, name, media.NopCloser(s))
+	}
+	return c.encode(s)
+}
+
+func (c *videoCodec[S]) DecodeRTP(w media.Writer[media.FrameSample], typ byte) Handler {
+	s := media.NopCloser(w)
+	if mediaDumpToFile {
+		id := mediaID.Add(1)
+		name := fmt.Sprintf("sip_rtp_in_%d", id)
+		ext := c.info.FileExt
+		if ext == "" {
+			ext = "raw"
+		}
+		s = media.DumpWriter(ext, name, media.NopCloser(s))
 	}
 	return NewMediaStreamIn(s)
 }

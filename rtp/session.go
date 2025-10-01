@@ -47,6 +47,7 @@ type WriteStream interface {
 type ReadStream interface {
 	// ReadRTP reads RTP packet and its header from the connection.
 	ReadRTP(h *rtp.Header, payload []byte) (int, error)
+	L() logger.Logger
 }
 
 func NewSession(log logger.Logger, conn net.Conn) Session {
@@ -101,6 +102,7 @@ func (s *session) AcceptStream() (ReadStream, uint32, error) {
 		r := s.bySSRC[p.SSRC]
 		if r == nil {
 			r = &readStream{
+				l:      s.log.WithComponent("readstream"),
 				ssrc:   p.SSRC,
 				closed: s.closed.Watch(),
 				copied: make(chan int),
@@ -155,6 +157,7 @@ func (w *writeStream) WriteRTP(h *rtp.Header, payload []byte) (int, error) {
 
 type readStream struct {
 	ssrc uint32
+	l    logger.Logger
 
 	closed  <-chan struct{}
 	recv    chan *rtp.Packet
@@ -164,7 +167,14 @@ type readStream struct {
 	payload []byte
 }
 
+func (r *readStream) L() logger.Logger {
+	return r.l
+}
+
 func (r *readStream) write(p *rtp.Packet) {
+	log := func() {
+		// r.l.Infow("ReadRTP write")
+	}
 	if enableZeroCopy {
 		r.mu.Lock()
 		h, payload := r.hdr, r.payload
@@ -173,6 +183,7 @@ func (r *readStream) write(p *rtp.Packet) {
 		if h != nil {
 			// zero copy
 			*h = p.Header
+			log()
 			n := copy(payload, p.Payload)
 			select {
 			case <-r.closed:
@@ -186,9 +197,14 @@ func (r *readStream) write(p *rtp.Packet) {
 	case r.recv <- p:
 	default:
 	}
+	log()
 }
 
 func (r *readStream) ReadRTP(h *rtp.Header, payload []byte) (int, error) {
+	log := func() {
+		// r.l.Infow("ReadRTP read")
+	}
+
 	direct := false
 	if enableZeroCopy {
 		r.mu.Lock()
@@ -203,6 +219,7 @@ func (r *readStream) ReadRTP(h *rtp.Header, payload []byte) (int, error) {
 		select {
 		case p := <-r.recv:
 			*h = p.Header
+			log()
 			n := copy(payload, p.Payload)
 			return n, nil
 		case <-r.closed:
@@ -221,6 +238,7 @@ func (r *readStream) ReadRTP(h *rtp.Header, payload []byte) (int, error) {
 		return n, nil
 	case p := <-r.recv:
 		*h = p.Header
+		log()
 		n := copy(payload, p.Payload)
 		return n, nil
 	case <-r.closed:

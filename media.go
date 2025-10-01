@@ -70,6 +70,83 @@ func NopCloser[T any](w Writer[T]) WriteCloser[T] {
 	return &writeCloser[T]{w}
 }
 
+type FrameSwitchWriter struct {
+	sampleRate int
+	ptr        atomic.Pointer[FrameWriter]
+	disabled   atomic.Bool
+}
+
+func (s *FrameSwitchWriter) Enable() {
+	s.disabled.Store(false)
+}
+
+func (s *FrameSwitchWriter) Disable() {
+	s.disabled.Store(true)
+}
+
+func (s *FrameSwitchWriter) Get() FrameWriter {
+	ptr := s.ptr.Load()
+	if ptr == nil {
+		return nil
+	}
+	return *ptr
+}
+
+// Swap sets an underlying writer and returns the old one.
+// Caller is responsible for closing the old writer.
+func (s *FrameSwitchWriter) Swap(w FrameWriter) FrameWriter {
+	var old *FrameWriter
+	if w == nil {
+		old = s.ptr.Swap(nil)
+	} else {
+		old = s.ptr.Swap(&w)
+	}
+	if old == nil {
+		return nil
+	}
+	return *old
+}
+
+func (s *FrameSwitchWriter) String() string {
+	w := s.Get()
+	return fmt.Sprintf("Switch(%d) -> %v", s.sampleRate, w)
+}
+
+func (s *FrameSwitchWriter) SampleRate() int {
+	if s.sampleRate == 0 {
+		panic("switch writer not initialized")
+	}
+	return s.sampleRate
+}
+
+func (s *FrameSwitchWriter) Close() error {
+	ptr := s.ptr.Swap(nil)
+	if ptr == nil {
+		return nil
+	}
+	return (*ptr).Close()
+}
+
+func (s *FrameSwitchWriter) WriteSample(sample FrameSample) error {
+	if s.disabled.Load() {
+		return nil
+	}
+	w := s.Get()
+	if w == nil {
+		return nil
+	}
+	return w.WriteSample(sample)
+}
+
+func NewFrameSwitchWriter(sampleRate int) *FrameSwitchWriter {
+	if sampleRate <= 0 {
+		panic("invalid sample rate")
+	}
+	return &FrameSwitchWriter{
+		sampleRate: sampleRate,
+	}
+}
+
 func NewSwitchWriter(sampleRate int) *SwitchWriter {
 	if sampleRate <= 0 {
 		panic("invalid sample rate")

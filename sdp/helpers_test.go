@@ -98,7 +98,7 @@ func TestGetAudioDest(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := GetAudioDest(test.session, test.audio)
+			got, err := GetMediaDest(test.session, test.audio)
 			if test.error {
 				require.Error(t, err)
 				return
