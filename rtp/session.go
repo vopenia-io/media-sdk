@@ -172,9 +172,6 @@ func (r *readStream) L() logger.Logger {
 }
 
 func (r *readStream) write(p *rtp.Packet) {
-	log := func() {
-		// r.l.Infow("ReadRTP write")
-	}
 	if enableZeroCopy {
 		r.mu.Lock()
 		h, payload := r.hdr, r.payload
@@ -183,7 +180,6 @@ func (r *readStream) write(p *rtp.Packet) {
 		if h != nil {
 			// zero copy
 			*h = p.Header
-			log()
 			n := copy(payload, p.Payload)
 			select {
 			case <-r.closed:
@@ -197,14 +193,9 @@ func (r *readStream) write(p *rtp.Packet) {
 	case r.recv <- p:
 	default:
 	}
-	log()
 }
 
 func (r *readStream) ReadRTP(h *rtp.Header, payload []byte) (int, error) {
-	log := func() {
-		// r.l.Infow("ReadRTP read")
-	}
-
 	direct := false
 	if enableZeroCopy {
 		r.mu.Lock()
@@ -219,7 +210,6 @@ func (r *readStream) ReadRTP(h *rtp.Header, payload []byte) (int, error) {
 		select {
 		case p := <-r.recv:
 			*h = p.Header
-			log()
 			n := copy(payload, p.Payload)
 			return n, nil
 		case <-r.closed:
@@ -238,7 +228,6 @@ func (r *readStream) ReadRTP(h *rtp.Header, payload []byte) (int, error) {
 		return n, nil
 	case p := <-r.recv:
 		*h = p.Header
-		log()
 		n := copy(payload, p.Payload)
 		return n, nil
 	case <-r.closed:
