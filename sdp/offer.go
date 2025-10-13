@@ -343,9 +343,10 @@ func AnswerAudioMedia(rtpListenerPort int, audio *TrackConfig, crypt *srtp.Profi
 
 func AnswerVideoMedia(rtpListenerPort int, track *TrackConfig, crypt *srtp.Profile) *sdp.MediaDescription {
 	attrs := make([]sdp.Attribute, 0, 2)
-	attrs = append(attrs, sdp.Attribute{
-		Key: "rtpmap", Value: fmt.Sprintf("%d %s", track.Type, track.Codec.Info().SDPName),
-	})
+	attrs = append(attrs, []sdp.Attribute{
+		{Key: "rtpmap", Value: fmt.Sprintf("%d %s", track.Type, track.Codec.Info().SDPName)},
+		{Key: "fmtp", Value: fmt.Sprintf("%d profile-level-id=%s", track.Codec.Info().RTPDefType, "42801F")},
+	}...)
 	formats := []string{strconv.Itoa(int(track.Type))}
 	proto := "AVP"
 	if crypt != nil {
