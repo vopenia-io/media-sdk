@@ -7,6 +7,8 @@ require github.com/stretchr/testify v1.11.1
 require (
 	github.com/at-wat/ebml-go v0.17.1
 	github.com/frostbyte73/core v0.1.1
+	github.com/go-gst/go-glib v1.4.0
+	github.com/go-gst/go-gst v1.4.0
 	github.com/go-logr/logr v1.4.3
 	github.com/gotranspile/g722 v0.0.0-20240123003956-384a1bb16a19
 	github.com/jfreymuth/oggvorbis v1.0.5
@@ -27,6 +29,7 @@ require (
 	github.com/jfreymuth/vorbis v1.0.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
+	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.15 // indirect

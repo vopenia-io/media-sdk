@@ -64,3 +64,39 @@ func ListenUDPPortRange(portMin, portMax int, ip netip.Addr) (*net.UDPConn, erro
 	}
 	return nil, ErrListenFailed
 }
+
+func ReserveUDP() (conn *net.UDPConn, port int, fd uintptr, err error) {
+	addr := &net.UDPAddr{IP: net.IPv4zero, Port: 0}
+	conn, err = net.ListenUDP("udp", addr)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	local := conn.LocalAddr().(*net.UDPAddr)
+	port = local.Port
+
+	// Get a dup()'d file descriptor that GStreamer can own.
+	// On Unix, UDPConn.File() duplicates the underlying FD.
+	// NOTE: the dup is set to blocking; GStreamer expects/blocking is fine.
+	f, err := conn.File()
+	if err != nil {
+		conn.Close()
+		return nil, 0, 0, err
+	}
+	// We keep both the conn and the dup()'d FD alive. GStreamer will close its copy on finalize.
+	fd = f.Fd()
+	// Avoid leaking the *os.File wrapper; GStreamer holds the FD value.
+	f.Close()
+	return conn, port, fd, nil
+}
+
+func FindFreeUDPPort(ip netip.Addr) (port int, err error) {
+	addr := &net.UDPAddr{IP: net.IPv4zero, Port: 0}
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		return 0, err
+	}
+	local := conn.LocalAddr().(*net.UDPAddr)
+	port = local.Port
+	conn.Close()
+	return port, nil
+}

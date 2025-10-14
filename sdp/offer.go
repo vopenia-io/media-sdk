@@ -86,11 +86,16 @@ func OfferCodecs() []CodecInfo {
 	return infos
 }
 
+type RTCP struct {
+	Port int
+	FbC  map[int]map[string]string
+}
+
 type MediaDesc struct {
 	Codecs         []CodecInfo
 	DTMFType       byte // set to 0 if there's no DTMF
 	CryptoProfiles []srtp.Profile
-	// IsVideo        bool
+	RTCP           *RTCP
 }
 
 type VideoMediaDesc struct {
@@ -341,12 +346,36 @@ func AnswerAudioMedia(rtpListenerPort int, audio *TrackConfig, crypt *srtp.Profi
 	}
 }
 
-func AnswerVideoMedia(rtpListenerPort int, track *TrackConfig, crypt *srtp.Profile) *sdp.MediaDescription {
+func AnswerVideoMedia(rtpListenerPort int, track *TrackConfig, crypt *srtp.Profile, rtcp *RTCP) *sdp.MediaDescription {
 	attrs := make([]sdp.Attribute, 0, 2)
 	attrs = append(attrs, []sdp.Attribute{
 		{Key: "rtpmap", Value: fmt.Sprintf("%d %s", track.Type, track.Codec.Info().SDPName)},
 		{Key: "fmtp", Value: fmt.Sprintf("%d profile-level-id=%s", track.Codec.Info().RTPDefType, "42801F")},
 	}...)
+	if rtcp != nil {
+		attrs = append(attrs, sdp.Attribute{
+			Key:   "rtcp",
+			Value: fmt.Sprintf("%d", rtcp.Port),
+		})
+		for pt, fbc := range rtcp.FbC {
+			var k string
+			if pt == 0 {
+				k = "*"
+			} else {
+				k = strconv.Itoa(pt)
+			}
+
+			values := make([]string, 0, len(fbc))
+			for _, v := range fbc {
+				values = append(values, v)
+			}
+
+			attrs = append(attrs, sdp.Attribute{
+				Key:   fmt.Sprintf("rtcp-fb:%s", k),
+				Value: strings.Join(values, " "),
+			})
+		}
+	}
 	formats := []string{strconv.Itoa(int(track.Type))}
 	proto := "AVP"
 	if crypt != nil {
@@ -549,7 +578,7 @@ func (d *Offer) configToSdpDesc(config *TrackConfig, desc MediaDesc, rtpListener
 	}
 
 	if isVideo {
-		return AnswerVideoMedia(rtpListenerPort, config, sprof), sconf, nil
+		return AnswerVideoMedia(rtpListenerPort, config, sprof, desc.RTCP), sconf, nil
 	} else {
 		return AnswerAudioMedia(rtpListenerPort, config, sprof), sconf, nil
 	}
@@ -796,6 +825,45 @@ func ParseMedia(d *sdp.MediaDescription, isVideo bool) (*MediaDesc, error) {
 	var out MediaDesc
 	for _, m := range d.Attributes {
 		switch m.Key {
+		case "rtcp":
+			port, err := strconv.Atoi(m.Value)
+			if err != nil {
+				slog.Warn("cannot parse rtcp port", "port", m.Value, "error", err)
+				continue
+			}
+			if out.RTCP == nil {
+				out.RTCP = &RTCP{}
+			}
+			out.RTCP.Port = port
+		case "rtcp-fb":
+			styp, rest, ok := strings.Cut(m.Value, " ")
+			if !ok {
+				continue
+			}
+			if styp == "*" {
+				styp = "0"
+			}
+			typ, err := strconv.Atoi(styp)
+			if err != nil {
+				continue
+			}
+			if out.RTCP == nil {
+				out.RTCP = &RTCP{}
+			}
+			if out.RTCP.FbC == nil {
+				out.RTCP.FbC = make(map[int]map[string]string)
+			}
+			fbc, ok := out.RTCP.FbC[typ]
+			if !ok {
+				fbc = make(map[string]string)
+				out.RTCP.FbC[typ] = fbc
+			}
+			n, p, ok := strings.Cut(rest, " ")
+			if !ok {
+				fbc[rest] = ""
+			} else {
+				fbc[n] = p
+			}
 		case "rtpmap":
 			sub := strings.SplitN(m.Value, " ", 2)
 			if len(sub) != 2 {
@@ -858,6 +926,11 @@ func ParseMedia(d *sdp.MediaDescription, isVideo bool) (*MediaDesc, error) {
 			Codec: codec,
 		})
 	}
+
+	if out.RTCP.Port == 0 && out.RTCP.FbC != nil {
+		out.RTCP.Port = d.MediaName.Port.Value + 1
+	}
+
 	return &out, nil
 }
 
