@@ -18,6 +18,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"net/netip"
 	"slices"
@@ -36,6 +37,7 @@ import (
 var (
 	ErrNoCommonMedia  = errors.New("common audio codec not found")
 	ErrNoCommonCrypto = errors.New("no common encryption profiles")
+	ErrNoCommonVideo  = errors.New("common video codec not found")
 )
 
 type Encryption int
@@ -47,8 +49,9 @@ const (
 )
 
 type CodecInfo struct {
-	Type  byte
-	Codec media.Codec
+	Type     byte
+	Codec    media.Codec
+	FmtpLine string
 }
 
 func OfferCodecs() []CodecInfo {
@@ -105,7 +108,7 @@ func appendCryptoProfiles(attrs []sdp.Attribute, profiles []srtp.Profile) []sdp.
 	return attrs
 }
 
-func OfferMedia(rtpListenerPort int, encrypted Encryption) (MediaDesc, *sdp.MediaDescription, error) {
+func OfferAudioMedia(rtpListenerPort int, encrypted Encryption) (MediaDesc, *sdp.MediaDescription, error) {
 	// Static compiler check for frame duration hardcoded below.
 	var _ = [1]struct{}{}[20*time.Millisecond-rtp.DefFrameDur]
 
@@ -164,7 +167,57 @@ func OfferMedia(rtpListenerPort int, encrypted Encryption) (MediaDesc, *sdp.Medi
 		}, nil
 }
 
-func AnswerMedia(rtpListenerPort int, audio *AudioConfig, crypt *srtp.Profile) *sdp.MediaDescription {
+func OfferVideoMedia(rtpListenerPort int, encrypted Encryption) (MediaDesc, *sdp.MediaDescription, error) {
+	// Static compiler check for frame duration hardcoded below.
+	var _ = [1]struct{}{}[20*time.Millisecond-rtp.DefFrameDur]
+
+	codecs := OfferCodecs()
+	attrs := make([]sdp.Attribute, 0, len(codecs)+4)
+	formats := make([]string, 0, len(codecs))
+	for _, codec := range codecs {
+		styp := strconv.Itoa(int(codec.Type))
+		formats = append(formats, styp)
+		attrs = append(attrs, sdp.Attribute{
+			Key:   "rtpmap",
+			Value: styp + " " + codec.Codec.Info().SDPName,
+		})
+	}
+	var cryptoProfiles []srtp.Profile
+	if encrypted != EncryptionNone {
+		var err error
+		cryptoProfiles, err = srtp.DefaultProfiles()
+		if err != nil {
+			return MediaDesc{}, nil, err
+		}
+		attrs = appendCryptoProfiles(attrs, cryptoProfiles)
+	}
+
+	attrs = append(attrs, []sdp.Attribute{
+		{Key: "ptime", Value: "20"},
+		{Key: "sendrecv"},
+	}...)
+
+	proto := "AVP"
+	if encrypted != EncryptionNone {
+		proto = "SAVP"
+	}
+
+	return MediaDesc{
+			Codecs:         codecs,
+			DTMFType:       0,
+			CryptoProfiles: cryptoProfiles,
+		}, &sdp.MediaDescription{
+			MediaName: sdp.MediaName{
+				Media:   "video",
+				Port:    sdp.RangedPort{Value: rtpListenerPort},
+				Protos:  []string{"RTP", proto},
+				Formats: formats,
+			},
+			Attributes: attrs,
+		}, nil
+}
+
+func AnswerAudioMedia(rtpListenerPort int, audio *TrackConfig, crypt *srtp.Profile) *sdp.MediaDescription {
 	// Static compiler check for frame duration hardcoded below.
 	var _ = [1]struct{}{}[20*time.Millisecond-rtp.DefFrameDur]
 
@@ -201,72 +254,119 @@ func AnswerMedia(rtpListenerPort int, audio *AudioConfig, crypt *srtp.Profile) *
 	}
 }
 
-type Description struct {
-	SDP  sdp.SessionDescription
-	Addr netip.AddrPort
+func AnswerVideoMedia(rtpListenerPort int, video *TrackConfig, crypt *srtp.Profile) *sdp.MediaDescription {
+	attrs := make([]sdp.Attribute, 0, 2)
+	attrs = append(attrs, sdp.Attribute{
+		Key: "rtpmap", Value: fmt.Sprintf("%d %s", video.Type, video.Codec.Info().SDPName),
+	})
+	if video.FmtpLine != "" {
+		attrs = append(attrs, sdp.Attribute{
+			Key: "fmtp", Value: fmt.Sprintf("%d %s", video.Type, video.FmtpLine),
+		})
+	}
+	formats := []string{strconv.Itoa(int(video.Type))}
+	proto := "AVP"
+	if crypt != nil {
+		proto = "SAVP"
+		attrs = appendCryptoProfiles(attrs, []srtp.Profile{*crypt})
+	}
+	attrs = append(attrs, []sdp.Attribute{
+		{Key: "sendrecv"},
+	}...)
+	return &sdp.MediaDescription{
+		MediaName: sdp.MediaName{
+			Media:   "video",
+			Port:    sdp.RangedPort{Value: rtpListenerPort},
+			Protos:  []string{"RTP", proto},
+			Formats: formats,
+		},
+		Attributes: attrs,
+	}
+}
+
+type MediaDescAddr struct {
 	MediaDesc
+	Addr netip.AddrPort
+}
+
+type Description struct {
+	SDP   sdp.SessionDescription
+	Audio MediaDescAddr
+	Video *MediaDescAddr
 }
 
 type Offer Description
 
 type Answer Description
 
-func NewOffer(publicIp netip.Addr, rtpListenerPort int, encrypted Encryption) (*Offer, error) {
+func NewOffer(publicIp netip.Addr, rtpListenerAudioPort int, rtpListenerVideoPort *int, encrypted Encryption) (*Offer, error) {
 	sessId := rand.Uint64() // TODO: do we need to track these?
 
-	m, mediaDesc, err := OfferMedia(rtpListenerPort, encrypted)
+	offer := &Offer{
+		SDP: sdp.SessionDescription{
+			Version: 0,
+			Origin: sdp.Origin{
+				Username:       "-",
+				SessionID:      sessId,
+				SessionVersion: sessId,
+				NetworkType:    "IN",
+				AddressType:    "IP4",
+				UnicastAddress: publicIp.String(),
+			},
+			SessionName: "LiveKit",
+			ConnectionInformation: &sdp.ConnectionInformation{
+				NetworkType: "IN",
+				AddressType: "IP4",
+				Address:     &sdp.Address{Address: publicIp.String()},
+			},
+			TimeDescriptions: []sdp.TimeDescription{
+				{
+					Timing: sdp.Timing{
+						StartTime: 0,
+						StopTime:  0,
+					},
+				},
+			},
+			MediaDescriptions: []*sdp.MediaDescription{},
+		},
+	}
+
+	audio, audioMediaDesc, err := OfferAudioMedia(rtpListenerAudioPort, encrypted)
 	if err != nil {
 		return nil, err
 	}
-	offer := sdp.SessionDescription{
-		Version: 0,
-		Origin: sdp.Origin{
-			Username:       "-",
-			SessionID:      sessId,
-			SessionVersion: sessId,
-			NetworkType:    "IN",
-			AddressType:    "IP4",
-			UnicastAddress: publicIp.String(),
-		},
-		SessionName: "LiveKit",
-		ConnectionInformation: &sdp.ConnectionInformation{
-			NetworkType: "IN",
-			AddressType: "IP4",
-			Address:     &sdp.Address{Address: publicIp.String()},
-		},
-		TimeDescriptions: []sdp.TimeDescription{
-			{
-				Timing: sdp.Timing{
-					StartTime: 0,
-					StopTime:  0,
-				},
-			},
-		},
-		MediaDescriptions: []*sdp.MediaDescription{mediaDesc},
+	offer.SDP.MediaDescriptions = append(offer.SDP.MediaDescriptions, audioMediaDesc)
+	offer.Audio = MediaDescAddr{
+		MediaDesc: audio,
+		Addr:      netip.AddrPortFrom(publicIp, uint16(rtpListenerAudioPort)),
 	}
-	return &Offer{
-		SDP:       offer,
-		Addr:      netip.AddrPortFrom(publicIp, uint16(rtpListenerPort)),
-		MediaDesc: m,
-	}, nil
+
+	if rtpListenerVideoPort != nil {
+		video, videoMediaDesc, err := OfferVideoMedia(*rtpListenerVideoPort, encrypted)
+		if err != nil {
+			return nil, err
+		}
+		offer.SDP.MediaDescriptions = append(offer.SDP.MediaDescriptions, videoMediaDesc)
+		offer.Video = &MediaDescAddr{
+			MediaDesc: video,
+			Addr:      netip.AddrPortFrom(publicIp, uint16(*rtpListenerVideoPort)),
+		}
+	}
+
+	return offer, nil
 }
 
-func (d *Offer) Answer(publicIp netip.Addr, rtpListenerPort int, enc Encryption) (*Answer, *MediaConfig, error) {
-	audio, err := SelectAudio(d.MediaDesc, false)
-	if err != nil {
-		return nil, nil, err
-	}
-
+func (d *Offer) configToSdpDesc(config *TrackConfig, desc MediaDesc, rtpListenerPort int, enc Encryption, isVideo bool) (*sdp.MediaDescription, *srtp.Config, error) {
 	var (
 		sconf *srtp.Config
 		sprof *srtp.Profile
 	)
-	if len(d.CryptoProfiles) != 0 && enc != EncryptionNone {
+	if len(desc.CryptoProfiles) != 0 && enc != EncryptionNone {
 		answer, err := srtp.DefaultProfiles()
 		if err != nil {
 			return nil, nil, err
 		}
-		sconf, sprof, err = SelectCrypto(d.CryptoProfiles, answer, true)
+		sconf, sprof, err = SelectCrypto(desc.CryptoProfiles, answer, true)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -275,96 +375,193 @@ func (d *Offer) Answer(publicIp netip.Addr, rtpListenerPort int, enc Encryption)
 		return nil, nil, ErrNoCommonCrypto
 	}
 
-	mediaDesc := AnswerMedia(rtpListenerPort, audio, sprof)
-	answer := sdp.SessionDescription{
-		Version: 0,
-		Origin: sdp.Origin{
-			Username:       "-",
-			SessionID:      d.SDP.Origin.SessionID,
-			SessionVersion: d.SDP.Origin.SessionID + 2,
-			NetworkType:    "IN",
-			AddressType:    "IP4",
-			UnicastAddress: publicIp.String(),
-		},
-		SessionName: "LiveKit",
-		ConnectionInformation: &sdp.ConnectionInformation{
-			NetworkType: "IN",
-			AddressType: "IP4",
-			Address:     &sdp.Address{Address: publicIp.String()},
-		},
-		TimeDescriptions: []sdp.TimeDescription{
-			{
-				Timing: sdp.Timing{
-					StartTime: 0,
-					StopTime:  0,
-				},
-			},
-		},
-		MediaDescriptions: []*sdp.MediaDescription{mediaDesc},
+	if isVideo {
+		return AnswerVideoMedia(rtpListenerPort, config, sprof), sconf, nil
+	} else {
+		return AnswerAudioMedia(rtpListenerPort, config, sprof), sconf, nil
 	}
-	src := netip.AddrPortFrom(publicIp, uint16(rtpListenerPort))
-	return &Answer{
-			SDP:  answer,
-			Addr: src,
-			MediaDesc: MediaDesc{
-				Codecs: []CodecInfo{
-					{Type: audio.Type, Codec: audio.Codec},
-				},
-				DTMFType: audio.DTMFType,
+}
+
+func (d *Offer) Answer(publicIp netip.Addr, rtpListenerAudioPort int, rtpListenerVideoPort *int, enc Encryption) (*Answer, *MediaConfig, error) {
+	slog.Info("answering offer", "audioPort", rtpListenerAudioPort, "videoPort", rtpListenerVideoPort)
+
+	answer := &Answer{
+		SDP: sdp.SessionDescription{
+			Version: 0,
+			Origin: sdp.Origin{
+				Username:       "-",
+				SessionID:      d.SDP.Origin.SessionID,
+				SessionVersion: d.SDP.Origin.SessionID + 2,
+				NetworkType:    "IN",
+				AddressType:    "IP4",
+				UnicastAddress: publicIp.String(),
 			},
-		}, &MediaConfig{
-			Local:  src,
-			Remote: d.Addr,
-			Audio:  *audio,
-			Crypto: sconf,
-		}, nil
+			SessionName: "LiveKit",
+			ConnectionInformation: &sdp.ConnectionInformation{
+				NetworkType: "IN",
+				AddressType: "IP4",
+				Address:     &sdp.Address{Address: publicIp.String()},
+			},
+			TimeDescriptions: []sdp.TimeDescription{
+				{
+					Timing: sdp.Timing{
+						StartTime: 0,
+						StopTime:  0,
+					},
+				},
+			},
+			MediaDescriptions: nil,
+		},
+	}
+
+	config := &MediaConfig{}
+
+	audio, err := SelectAudio(d.Audio.MediaDesc, false)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	audioDesc, audioSconf, err := d.configToSdpDesc(audio, d.Audio.MediaDesc, rtpListenerAudioPort, enc, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	answer.SDP.MediaDescriptions = append(answer.SDP.MediaDescriptions, audioDesc)
+	audioSrc := netip.AddrPortFrom(publicIp, uint16(rtpListenerAudioPort))
+	answer.Audio = MediaDescAddr{
+		MediaDesc: d.Audio.MediaDesc,
+		Addr:      audioSrc,
+	}
+	config.Audio = MediaTrackConfig{
+		TrackConfig: *audio,
+		Local:       audioSrc,
+		Remote:      d.Audio.Addr,
+		Crypto:      audioSconf,
+	}
+
+	if rtpListenerVideoPort != nil && d.Video != nil {
+		slog.Info("including video in answer", "port", *rtpListenerVideoPort)
+		video, err := SelectVideo(d.Video.MediaDesc, false)
+		if err != nil {
+			return nil, nil, err
+		}
+		videoDesc, videoSconf, err := d.configToSdpDesc(video, d.Video.MediaDesc, *rtpListenerVideoPort, enc, true)
+		if err != nil {
+			return nil, nil, err
+		}
+		answer.SDP.MediaDescriptions = append(answer.SDP.MediaDescriptions, videoDesc)
+		videoSrc := netip.AddrPortFrom(publicIp, uint16(*rtpListenerVideoPort))
+		answer.Video = &MediaDescAddr{
+			MediaDesc: d.Video.MediaDesc,
+			Addr:      videoSrc,
+		}
+		config.Video = &MediaTrackConfig{
+			TrackConfig: *video,
+			Local:       videoSrc,
+			Remote:      d.Video.Addr,
+			Crypto:      videoSconf,
+		}
+	}
+
+	return answer, config, nil
 }
 
 func (d *Answer) Apply(offer *Offer, enc Encryption) (*MediaConfig, error) {
-	audio, err := SelectAudio(d.MediaDesc, true)
+	audio, err := SelectAudio(d.Audio.MediaDesc, true)
 	if err != nil {
 		return nil, err
 	}
-	var sconf *srtp.Config
-	if len(d.CryptoProfiles) != 0 && enc != EncryptionNone {
-		sconf, _, err = SelectCrypto(offer.CryptoProfiles, d.CryptoProfiles, false)
+	var audioSconf *srtp.Config
+	if len(d.Audio.CryptoProfiles) != 0 && enc != EncryptionNone {
+		audioSconf, _, err = SelectCrypto(offer.Audio.CryptoProfiles, d.Audio.CryptoProfiles, false)
 		if err != nil {
 			return nil, err
 		}
 	}
-	if sconf == nil && enc == EncryptionRequire {
+	if audioSconf == nil && enc == EncryptionRequire {
 		return nil, ErrNoCommonCrypto
 	}
+	audioConf := MediaTrackConfig{
+		TrackConfig: *audio,
+		Local:       offer.Audio.Addr,
+		Remote:      d.Audio.Addr,
+		Crypto:      audioSconf,
+	}
+
+	videoConf := (*MediaTrackConfig)(nil)
+	if offer.Video != nil {
+		video, err := SelectVideo(d.Video.MediaDesc, true)
+		if err != nil {
+			return nil, err
+		}
+		var videoSconf *srtp.Config
+		if len(d.Video.CryptoProfiles) != 0 && enc != EncryptionNone {
+			videoSconf, _, err = SelectCrypto(offer.Video.CryptoProfiles, d.Video.CryptoProfiles, false)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if audioSconf == nil && enc == EncryptionRequire {
+			return nil, ErrNoCommonCrypto
+		}
+
+		videoConf = &MediaTrackConfig{
+			TrackConfig: *video,
+			Local:       offer.Video.Addr,
+			Remote:      d.Video.Addr,
+			Crypto:      videoSconf,
+		}
+	}
+
 	return &MediaConfig{
-		Local:  offer.Addr,
-		Remote: d.Addr,
-		Audio:  *audio,
-		Crypto: sconf,
+		audioConf,
+		videoConf,
 	}, nil
 }
 
 func Parse(data []byte) (*Description, error) {
-	offer := new(Description)
-	if err := offer.SDP.Unmarshal(data); err != nil {
+	desc := new(Description)
+	if err := desc.SDP.Unmarshal(data); err != nil {
 		return nil, err
 	}
-	audio := GetAudio(&offer.SDP)
-	if audio == nil {
+	audios, videos := GetMedias(&desc.SDP)
+	if len(audios) == 0 {
 		return nil, errors.New("no audio in sdp")
 	}
+	audio := audios[0]
+	video := (*sdp.MediaDescription)(nil)
+	if len(videos) > 0 {
+		video = videos[0]
+	}
+
 	var err error
-	offer.Addr, err = GetAudioDest(&offer.SDP, audio)
+	desc.Audio.Addr, err = GetMediaDest(&desc.SDP, audio)
 	if err != nil {
 		return nil, err
-	} else if !offer.Addr.IsValid() || offer.Addr.Port() == 0 {
-		return nil, fmt.Errorf("invalid audio address %q", offer.Addr)
+	} else if !desc.Audio.Addr.IsValid() || desc.Audio.Addr.Port() == 0 {
+		return nil, fmt.Errorf("invalid audio address %q", desc.Audio.Addr)
 	}
-	m, err := ParseMedia(audio)
+	m, err := ParseMedia(audio, false)
 	if err != nil {
 		return nil, err
 	}
-	offer.MediaDesc = *m
-	return offer, nil
+	desc.Audio.MediaDesc = *m
+
+	if video != nil {
+		desc.Video = &MediaDescAddr{}
+		desc.Video.Addr, err = GetMediaDest(&desc.SDP, video)
+		if err != nil {
+			return nil, err
+		} else if !desc.Video.Addr.IsValid() || desc.Video.Addr.Port() == 0 {
+			return nil, fmt.Errorf("invalid video address %q", desc.Video.Addr)
+		}
+		m, err := ParseMedia(video, true)
+		if err != nil {
+			return nil, err
+		}
+		desc.Video.MediaDesc = *m
+	}
+	slog.Info("TEST parsed offer", "offer", desc)
+	return desc, nil
 }
 
 func ParseOffer(data []byte) (*Offer, error) {
@@ -422,10 +619,22 @@ func parseSRTPProfile(val string) (*srtp.Profile, error) {
 	}, nil
 }
 
-func ParseMedia(d *sdp.MediaDescription) (*MediaDesc, error) {
+func ParseMedia(d *sdp.MediaDescription, isVideo bool) (*MediaDesc, error) {
 	var out MediaDesc
+	fmtpLines := make(map[byte]string)
 	for _, m := range d.Attributes {
 		switch m.Key {
+		case "fmtp":
+			sub := strings.SplitN(m.Value, " ", 2)
+			if len(sub) != 2 {
+				continue
+			}
+			typ, err := strconv.Atoi(sub[0])
+			if err != nil {
+				continue
+			}
+			fmtpLines[byte(typ)] = sub[1]
+
 		case "rtpmap":
 			sub := strings.SplitN(m.Value, " ", 2)
 			if len(sub) != 2 {
@@ -440,7 +649,19 @@ func ParseMedia(d *sdp.MediaDescription) (*MediaDesc, error) {
 				out.DTMFType = byte(typ)
 				continue
 			}
-			codec, _ := CodecByName(name).(rtp.AudioCodec)
+			var codec media.Codec
+			var ok bool
+			if isVideo {
+				codec, ok = CodecByName(name).(rtp.VideoCodec)
+			} else {
+				codec, ok = CodecByName(name).(rtp.AudioCodec)
+			}
+			if !ok {
+				slog.Warn("unknown codec", "name", name)
+				continue
+			} else {
+				slog.Info("found codec", "name", name, "type", typ, "isVideo", isVideo)
+			}
 			out.Codecs = append(out.Codecs, CodecInfo{
 				Type:  byte(typ),
 				Codec: codec,
@@ -455,34 +676,94 @@ func ParseMedia(d *sdp.MediaDescription) (*MediaDesc, error) {
 			out.CryptoProfiles = append(out.CryptoProfiles, *p)
 		}
 	}
+
+	for i := range out.Codecs {
+		if fmtp, ok := fmtpLines[out.Codecs[i].Type]; ok {
+			// if out.Codecs[i].Codec.Info().SDPName == h264.SDPName {
+			// 	fmtp = strings.Join([]string{fmtp, "profile-level-id=42e01f", "level-asymmetry-allowed=1", "level-asymmetry-allowed=1"}, ";")
+			// }
+			out.Codecs[i].FmtpLine = fmtp
+		}
+	}
+
 	for _, f := range d.MediaName.Formats {
 		typ, err := strconv.Atoi(f)
 		if err != nil {
 			continue
 		}
-		codec, _ := rtp.CodecByPayloadType(byte(typ)).(rtp.AudioCodec)
+		var codec media.Codec
+		var ok bool
+		if isVideo {
+			codec, ok = rtp.CodecByPayloadType(byte(typ)).(rtp.VideoCodec)
+		} else {
+			codec, ok = rtp.CodecByPayloadType(byte(typ)).(rtp.AudioCodec)
+		}
+		if !ok {
+			slog.Warn("unknown codec type", "type", typ)
+			continue
+		}
 		out.Codecs = append(out.Codecs, CodecInfo{
 			Type:  byte(typ),
 			Codec: codec,
 		})
 	}
+
 	return &out, nil
 }
 
-type MediaConfig struct {
+type MediaTrackConfig struct {
+	TrackConfig
 	Local  netip.AddrPort
 	Remote netip.AddrPort
-	Audio  AudioConfig
 	Crypto *srtp.Config
 }
 
-type AudioConfig struct {
-	Codec    rtp.AudioCodec
-	Type     byte
-	DTMFType byte
+type MediaConfig struct {
+	Audio MediaTrackConfig
+	Video *MediaTrackConfig
 }
 
-func SelectAudio(desc MediaDesc, answer bool) (*AudioConfig, error) {
+type TrackConfig struct {
+	Codec    media.Codec
+	Type     byte
+	DTMFType byte
+	FmtpLine string
+}
+
+func SelectVideo(desc MediaDesc, answer bool) (*TrackConfig, error) {
+	var (
+		priority   int
+		videoCodec media.Codec
+		videoType  byte
+		videoFmtp  string
+	)
+	for _, c := range desc.Codecs {
+		// Check if this is a video codec
+		if c.Codec == nil {
+			continue
+		}
+		if videoCodec == nil || c.Codec.Info().Priority > priority {
+			videoType = c.Type
+			videoCodec = c.Codec
+			priority = c.Codec.Info().Priority
+			videoFmtp = c.FmtpLine
+		}
+		if answer {
+			break
+		}
+	}
+	if videoCodec == nil {
+		return nil, ErrNoCommonVideo
+	}
+
+	return &TrackConfig{
+		Codec:    videoCodec.(rtp.VideoCodec),
+		Type:     videoType,
+		FmtpLine: videoFmtp,
+	}, nil
+}
+
+func SelectAudio(desc MediaDesc, answer bool) (*TrackConfig, error) {
 	var (
 		priority   int
 		audioCodec rtp.AudioCodec
@@ -505,7 +786,7 @@ func SelectAudio(desc MediaDesc, answer bool) (*AudioConfig, error) {
 	if audioCodec == nil {
 		return nil, ErrNoCommonMedia
 	}
-	return &AudioConfig{
+	return &TrackConfig{
 		Codec:    audioCodec,
 		Type:     audioType,
 		DTMFType: desc.DTMFType,

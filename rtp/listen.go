@@ -19,11 +19,16 @@ import (
 	"math/rand"
 	"net"
 	"net/netip"
+	"sync"
 )
 
 var ErrListenFailed = errors.New("failed to listen on udp port")
 
+var PortMu sync.Mutex
+
 func ListenUDPPortRange(portMin, portMax int, ip netip.Addr) (*net.UDPConn, error) {
+	PortMu.Lock()
+	defer PortMu.Unlock()
 	if portMin == 0 && portMax == 0 {
 		return net.ListenUDP("udp", &net.UDPAddr{
 			IP:   ip.AsSlice(),

@@ -31,15 +31,39 @@ func GetAudio(s *sdp.SessionDescription) *sdp.MediaDescription {
 	return nil
 }
 
-// GetAudioDest returns the RTP dst address:port for an audio m=
+func GetMainAudio(s []*sdp.MediaDescription) (*sdp.MediaDescription, []*sdp.MediaDescription) {
+	for i, m := range s {
+		if m.MediaName.Media == "audio" {
+			s = append(s[:i], s[i+1:]...)
+			return m, s
+		}
+	}
+	return nil, s
+}
+
+func GetMedias(s *sdp.SessionDescription) (audio []*sdp.MediaDescription, video []*sdp.MediaDescription) {
+	audio = make([]*sdp.MediaDescription, 0, len(s.MediaDescriptions)-1)
+	video = make([]*sdp.MediaDescription, 0, len(s.MediaDescriptions)-1)
+	for _, m := range s.MediaDescriptions {
+		switch m.MediaName.Media {
+		case "audio":
+			audio = append(audio, m)
+		case "video":
+			video = append(video, m)
+		}
+	}
+	return audio, video
+}
+
+// GetMediaDest returns the RTP dst address:port for an media m=
 // it first uses media-level c=, then session-level c=.
-func GetAudioDest(s *sdp.SessionDescription, audio *sdp.MediaDescription) (netip.AddrPort, error) {
-	if audio == nil || s == nil {
-		return netip.AddrPort{}, errors.New("no audio in sdp")
+func GetMediaDest(s *sdp.SessionDescription, media *sdp.MediaDescription) (netip.AddrPort, error) {
+	if media == nil || s == nil {
+		return netip.AddrPort{}, errors.New("no media in sdp")
 	}
 
 	// pick media-level c=; if absent, fall back to session-level c=
-	ci := audio.ConnectionInformation
+	ci := media.ConnectionInformation
 	if ci == nil {
 		ci = s.ConnectionInformation
 	}
@@ -56,5 +80,5 @@ func GetAudioDest(s *sdp.SessionDescription, audio *sdp.MediaDescription) (netip
 	if err != nil {
 		return netip.AddrPort{}, fmt.Errorf("invalid destination address %q: %w", addr, err)
 	}
-	return netip.AddrPortFrom(ip, uint16(audio.MediaName.Port.Value)), nil
+	return netip.AddrPortFrom(ip, uint16(media.MediaName.Port.Value)), nil
 }

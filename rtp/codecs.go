@@ -44,6 +44,10 @@ func CodecByPayloadType(typ byte) media.Codec {
 	return codecByType[typ]
 }
 
+type VideoCodec interface {
+	media.Codec
+}
+
 type AudioCodec interface {
 	media.Codec
 	EncodeRTP(w *Stream) media.PCM16Writer

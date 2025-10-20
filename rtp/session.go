@@ -81,9 +81,11 @@ func (s *session) AcceptStream() (ReadStream, uint32, error) {
 	for {
 		n, err := s.conn.Read(s.rbuf[:])
 		if err != nil {
+			s.log.Errorw("read RTP failed", err)
 			return nil, 0, err
 		}
 		if n > MTUSize {
+			s.log.Errorw("RTP packet is larger than MTU limit", nil)
 			overflow = true
 			if !overflow {
 				s.log.Errorw("RTP packet is larger than MTU limit", nil)
@@ -94,6 +96,7 @@ func (s *session) AcceptStream() (ReadStream, uint32, error) {
 		var p rtp.Packet
 		err = p.Unmarshal(buf)
 		if err != nil {
+			s.log.Errorw("unmarshal RTP packet failed", err)
 			continue // ignore
 		}
 
