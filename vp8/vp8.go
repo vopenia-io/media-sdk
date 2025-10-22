@@ -14,7 +14,7 @@
 
 package vp8
 
-import "github.com/livekit/media-sdk"
+// import "github.com/livekit/media-sdk"
 
 // import (
 // 	"github.com/livekit/media-sdk"
@@ -34,15 +34,15 @@ const SDPName = "VP8/90000"
 // }
 
 // // Register the VP8 codec on package initialization.
-func init() {
-	print("Registering VP8 codec\n")
-	media.RegisterCodec(media.NewCodec(media.CodecInfo{
-		SDPName:      SDPName,
-		SampleRate:   90000,
-		RTPClockRate: 90000,
-		RTPDefType:   98,
-		RTPIsStatic:  false,
-		Priority:     102,
-		FileExt:      "vp8",
-	}))
-}
+// func init() {
+// 	print("Registering VP8 codec\n")
+// 	media.RegisterCodec(media.NewCodec(media.CodecInfo{
+// 		SDPName:      SDPName,
+// 		SampleRate:   90000,
+// 		RTPClockRate: 90000,
+// 		RTPDefType:   98,
+// 		RTPIsStatic:  false,
+// 		Priority:     102,
+// 		FileExt:      "vp8",
+// 	}))
+// }

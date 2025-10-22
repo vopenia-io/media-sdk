@@ -46,6 +46,7 @@ func CodecByPayloadType(typ byte) media.Codec {
 
 type VideoCodec interface {
 	media.Codec
+	ParseFMTP(fmtp string) error
 }
 
 type AudioCodec interface {

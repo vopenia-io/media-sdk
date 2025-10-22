@@ -683,6 +683,13 @@ func ParseMedia(d *sdp.MediaDescription, isVideo bool) (*MediaDesc, error) {
 			// 	fmtp = strings.Join([]string{fmtp, "profile-level-id=42e01f", "level-asymmetry-allowed=1", "level-asymmetry-allowed=1"}, ";")
 			// }
 			out.Codecs[i].FmtpLine = fmtp
+			if isVideo {
+				if vcodec, ok := out.Codecs[i].Codec.(rtp.VideoCodec); ok {
+					if err := vcodec.ParseFMTP(fmtp); err != nil {
+						slog.Warn("error parsing video fmtp", "fmtp", fmtp, "error", err)
+					}
+				}
+			}
 		}
 	}
 
