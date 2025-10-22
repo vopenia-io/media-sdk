@@ -2,7 +2,6 @@ package rtp
 
 import (
 	"fmt"
-	"log/slog"
 	"sync/atomic"
 
 	"github.com/pion/rtp"
