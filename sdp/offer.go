@@ -91,6 +91,7 @@ type MediaDesc struct {
 	Codecs         []CodecInfo
 	DTMFType       byte // set to 0 if there's no DTMF
 	CryptoProfiles []srtp.Profile
+	RtcpPort       int
 }
 
 func appendCryptoProfiles(attrs []sdp.Attribute, profiles []srtp.Profile) []sdp.Attribute {
@@ -254,11 +255,12 @@ func AnswerAudioMedia(rtpListenerPort int, audio *TrackConfig, crypt *srtp.Profi
 	}
 }
 
-func AnswerVideoMedia(rtpListenerPort int, video *TrackConfig, crypt *srtp.Profile) *sdp.MediaDescription {
+func AnswerVideoMedia(rtpListenerPort int, rtcpListenerPort int, video *TrackConfig, crypt *srtp.Profile) *sdp.MediaDescription {
 	attrs := make([]sdp.Attribute, 0, 2)
-	attrs = append(attrs, sdp.Attribute{
-		Key: "rtpmap", Value: fmt.Sprintf("%d %s", video.Type, video.Codec.Info().SDPName),
-	})
+	attrs = append(attrs, []sdp.Attribute{
+		{Key: "rtpmap", Value: fmt.Sprintf("%d %s", video.Type, video.Codec.Info().SDPName)},
+		{Key: "rtcp", Value: fmt.Sprintf("%d", rtcpListenerPort)},
+	}...)
 	if video.FmtpLine != "" {
 		attrs = append(attrs, sdp.Attribute{
 			Key: "fmtp", Value: fmt.Sprintf("%d %s", video.Type, video.FmtpLine),
@@ -356,7 +358,7 @@ func NewOffer(publicIp netip.Addr, rtpListenerAudioPort int, rtpListenerVideoPor
 	return offer, nil
 }
 
-func (d *Offer) configToSdpDesc(config *TrackConfig, desc MediaDesc, rtpListenerPort int, enc Encryption, isVideo bool) (*sdp.MediaDescription, *srtp.Config, error) {
+func (d *Offer) configToSdpDesc(config *TrackConfig, desc MediaDesc, rtpListenerPort int, rtcpListenerPort int, enc Encryption, isVideo bool) (*sdp.MediaDescription, *srtp.Config, error) {
 	var (
 		sconf *srtp.Config
 		sprof *srtp.Profile
@@ -376,13 +378,13 @@ func (d *Offer) configToSdpDesc(config *TrackConfig, desc MediaDesc, rtpListener
 	}
 
 	if isVideo {
-		return AnswerVideoMedia(rtpListenerPort, config, sprof), sconf, nil
+		return AnswerVideoMedia(rtpListenerPort, rtcpListenerPort, config, sprof), sconf, nil
 	} else {
 		return AnswerAudioMedia(rtpListenerPort, config, sprof), sconf, nil
 	}
 }
 
-func (d *Offer) Answer(publicIp netip.Addr, rtpListenerAudioPort int, rtpListenerVideoPort *int, enc Encryption) (*Answer, *MediaConfig, error) {
+func (d *Offer) Answer(publicIp netip.Addr, rtpListenerAudioPort int, rtpListenerVideoPort int, rtcpListenerVideoPort int, enc Encryption) (*Answer, *MediaConfig, error) {
 	slog.Info("answering offer", "audioPort", rtpListenerAudioPort, "videoPort", rtpListenerVideoPort)
 
 	answer := &Answer{
@@ -421,7 +423,7 @@ func (d *Offer) Answer(publicIp netip.Addr, rtpListenerAudioPort int, rtpListene
 		return nil, nil, err
 	}
 
-	audioDesc, audioSconf, err := d.configToSdpDesc(audio, d.Audio.MediaDesc, rtpListenerAudioPort, enc, false)
+	audioDesc, audioSconf, err := d.configToSdpDesc(audio, d.Audio.MediaDesc, rtpListenerAudioPort, 0, enc, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -438,18 +440,18 @@ func (d *Offer) Answer(publicIp netip.Addr, rtpListenerAudioPort int, rtpListene
 		Crypto:      audioSconf,
 	}
 
-	if rtpListenerVideoPort != nil && d.Video != nil {
-		slog.Info("including video in answer", "port", *rtpListenerVideoPort)
+	if d.Video != nil {
+		slog.Info("including video in answer", "port", rtpListenerVideoPort)
 		video, err := SelectVideo(d.Video.MediaDesc, false)
 		if err != nil {
 			return nil, nil, err
 		}
-		videoDesc, videoSconf, err := d.configToSdpDesc(video, d.Video.MediaDesc, *rtpListenerVideoPort, enc, true)
+		videoDesc, videoSconf, err := d.configToSdpDesc(video, d.Video.MediaDesc, rtpListenerVideoPort, rtcpListenerVideoPort, enc, true)
 		if err != nil {
 			return nil, nil, err
 		}
 		answer.SDP.MediaDescriptions = append(answer.SDP.MediaDescriptions, videoDesc)
-		videoSrc := netip.AddrPortFrom(publicIp, uint16(*rtpListenerVideoPort))
+		videoSrc := netip.AddrPortFrom(publicIp, uint16(rtpListenerVideoPort))
 		answer.Video = &MediaDescAddr{
 			MediaDesc: d.Video.MediaDesc,
 			Addr:      videoSrc,
@@ -634,7 +636,16 @@ func ParseMedia(d *sdp.MediaDescription, isVideo bool) (*MediaDesc, error) {
 				continue
 			}
 			fmtpLines[byte(typ)] = sub[1]
-
+		case "rtcp":
+			sub := strings.SplitN(m.Value, " ", 2)
+			if len(sub) != 2 {
+				continue
+			}
+			port, err := strconv.Atoi(sub[0])
+			if err != nil {
+				continue
+			}
+			out.RtcpPort = port
 		case "rtpmap":
 			sub := strings.SplitN(m.Value, " ", 2)
 			if len(sub) != 2 {
@@ -713,6 +724,10 @@ func ParseMedia(d *sdp.MediaDescription, isVideo bool) (*MediaDesc, error) {
 			Type:  byte(typ),
 			Codec: codec,
 		})
+	}
+
+	if out.RtcpPort == 0 {
+		out.RtcpPort = d.MediaName.Port.Value + 1 // TODO: confirm MediaName.Port.Value is correct
 	}
 
 	return &out, nil
