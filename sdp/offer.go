@@ -750,6 +750,7 @@ type TrackConfig struct {
 	Type     byte
 	DTMFType byte
 	FmtpLine string
+	RtcpPort int
 }
 
 func SelectVideo(desc MediaDesc, answer bool) (*TrackConfig, error) {
@@ -782,6 +783,7 @@ func SelectVideo(desc MediaDesc, answer bool) (*TrackConfig, error) {
 		Codec:    videoCodec.(rtp.VideoCodec),
 		Type:     videoType,
 		FmtpLine: videoFmtp,
+		RtcpPort: desc.RtcpPort,
 	}, nil
 }
 
