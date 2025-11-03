@@ -101,6 +101,28 @@ func (s *Session) ToSDP() error {
 		}
 	}
 
+	// Clean up session-level attributes - remove offer-specific attributes
+	// Only keep safe session attributes for an answer
+	safeSessionAttrs := map[string]bool{
+		"group":           true, // BUNDLE grouping
+		"msid-semantic":   true, // Media stream semantics
+		"ice-lite":        true, // ICE lite mode
+		"ice-options":     true, // ICE options
+		"fingerprint":     true, // DTLS fingerprint
+		"setup":           true, // DTLS setup role
+		"tls-id":          true, // TLS ID
+		"identity":        true, // Identity assertion
+		"extmap-allow-mixed": true, // Allow mixed RTP/RTCP extensions
+	}
+
+	filteredSessionAttrs := []sdp.Attribute{}
+	for _, attr := range s.Description.Attributes {
+		if safeSessionAttrs[attr.Key] {
+			filteredSessionAttrs = append(filteredSessionAttrs, attr)
+		}
+	}
+	s.Description.Attributes = filteredSessionAttrs
+
 	// Update audio media section
 	if s.Audio != nil {
 		if err := s.Audio.syncToDescription(); err != nil {
@@ -163,14 +185,23 @@ func (m *MediaSection) syncToDescription() error {
 	// This ensures static payload types get proper rtpmap even if not in offer
 	filteredAttrs := []sdp.Attribute{}
 
-	// Keep non-codec attributes
+	// Only keep safe attributes that should be in an answer
+	// Don't copy offer-specific attributes like rtcp-xr, record, rtcp port, etc.
+	safeAttributes := map[string]bool{
+		"crypto": true, // SRTP crypto lines
+		"mid":    true, // Media ID for bundling
+	}
+
 	for _, attr := range md.Attributes {
 		switch attr.Key {
 		case "rtpmap", "fmtp", "rtcp-fb":
 			// Skip - we'll regenerate these
 			continue
 		default:
-			filteredAttrs = append(filteredAttrs, attr)
+			// Only keep safe attributes
+			if safeAttributes[attr.Key] {
+				filteredAttrs = append(filteredAttrs, attr)
+			}
 		}
 	}
 
