@@ -13,26 +13,23 @@ import (
 // higher-level details extracted from each m= block.
 type Session struct {
 	Description sdp.SessionDescription
-	Media       []MediaSection
+	Audio       *MediaSection
+	Video       *MediaSection
 }
 
 // MediaSection describes a single m= section while reusing pion's representation
 // for raw attributes and payloads.
 type MediaSection struct {
-	// Description references the underlying pion media description.
-	Description *sdp.MediaDescription
-	// MID mirrors the a=mid attribute when present.
-	MID string
-	// Kind is the media type (audio, video, application, ...).
-	Kind MediaKind
-	// Direction derives from a=sendrecv/sendonly/recvonly/inactive. Defaults to sendrecv.
-	Direction Direction
-	// Disabled is true when the port is zero (rejected m=).
-	Disabled bool
-	// Codecs lists payload formats mapped onto media.Codec entries.
-	Codecs []Codec
-	// Security captures SRTP profiles signaled for the media section.
-	Security Security
+	Description *sdp.MediaDescription // Description references the underlying pion media description.
+	MID         string                // MID mirrors the a=mid attribute when present.
+	Kind        MediaKind             // Kind is the media type (audio, video, application, ...).
+	Direction   Direction             // Direction derives from a=sendrecv/sendonly/recvonly/inactive. Defaults to sendrecv.
+	Disabled    bool                  // Disabled is true when the port is zero (rejected m=).
+	Codecs      []*Codec              // Codecs lists payload formats mapped onto media.Codec entries.
+	Codec       *Codec                // PreferredCodec is the selected codec for this track.
+	Security    Security              // Security captures SRTP profiles signaled for the media section.
+	Port        uint16                // Port is the media port from the m= line.
+	RTCPPort    uint16                // RTCPPort is the RTCP port from the m= line. (0 mean not specified)
 }
 
 // MediaKind is a simple string alias for the SDP media name.
