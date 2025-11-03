@@ -1,6 +1,8 @@
 package v2
 
 import (
+	"net/netip"
+
 	"github.com/pion/sdp/v3"
 
 	media "github.com/livekit/media-sdk"
@@ -13,6 +15,7 @@ import (
 // higher-level details extracted from each m= block.
 type Session struct {
 	Description sdp.SessionDescription
+	Addr        netip.Addr
 	Audio       *MediaSection
 	Video       *MediaSection
 }

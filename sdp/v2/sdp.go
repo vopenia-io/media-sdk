@@ -24,8 +24,10 @@ func (s *Session) Unmarshal(sdpData []byte) error {
 }
 
 // FromSDP populates the structure from a pion SessionDescription.
+// it does not modify the raw pion SessionDescription and overwrites any existing data.
 func (s *Session) FromSDP(sd sdp.SessionDescription) error {
 	panic("not implemented")
+	return s.SelectCodecs()
 }
 
 func (s *Session) Marshal() ([]byte, error) {
@@ -64,4 +66,18 @@ func (m *MediaSection) SelectCodec() error {
 // It only contain audio as video support was added in v2.
 func (s *Session) V1MediaConfig() (v1.MediaConfig, error) {
 	panic("not implemented")
+}
+
+// Apply takes a pion SessionDescription and applies its data to the structure.
+// It may overwrites any existing data.
+func (s *Session) Apply(sd sdp.SessionDescription) error {
+	panic("not implemented")
+}
+
+func (s *Session) ApplySDP(sdpData []byte) error {
+	sd := sdp.SessionDescription{}
+	if err := sd.Unmarshal(sdpData); err != nil {
+		return err
+	}
+	return s.Apply(sd)
 }
