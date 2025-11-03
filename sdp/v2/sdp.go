@@ -349,8 +349,18 @@ func (s *Session) V1MediaConfig() (v1.MediaConfig, error) {
 		cfg.Local = netip.AddrPortFrom(s.Addr, audio.Port)
 	}
 
-	// Remote address will be set externally (from the original offer)
-	// We don't have remote info in the answer generation phase
+	// Remote address comes from the original offer SDP (stored in Description)
+	// Parse it from the connection information and media port
+	if s.Description.ConnectionInformation != nil && s.Description.ConnectionInformation.Address != nil {
+		if remoteAddr, err := parseConnectionAddress(&s.Description, audio.Description); err == nil {
+			// Get remote port from the original media description
+			remotePort := uint16(0)
+			if audio.Description != nil {
+				remotePort = uint16(audio.Description.MediaName.Port.Value)
+			}
+			cfg.Remote = netip.AddrPortFrom(remoteAddr, remotePort)
+		}
+	}
 
 	// Convert crypto
 	if len(audio.Security.Profiles) > 0 {

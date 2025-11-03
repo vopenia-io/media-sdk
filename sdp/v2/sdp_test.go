@@ -237,6 +237,15 @@ a=sendrecv
 	require.NoError(t, err)
 	require.NotNil(t, mc.Audio.Codec)
 
+	// CRITICAL: Check that Remote address is extracted from original offer
+	require.True(t, mc.Remote.IsValid(), "Remote address should be set")
+	require.Equal(t, "192.168.1.1", mc.Remote.Addr().String(), "Remote IP should match offer")
+	require.Equal(t, uint16(9000), mc.Remote.Port(), "Remote port should match offer")
+
+	// Check Local address matches what we set
+	require.Equal(t, "192.168.1.2", mc.Local.Addr().String(), "Local IP should match answer")
+	require.Equal(t, uint16(10000), mc.Local.Port(), "Local port should match answer")
+
 	// Marshal answer
 	answerData, err := offer.Marshal()
 	require.NoError(t, err)
