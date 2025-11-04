@@ -238,24 +238,40 @@ func (m *SDPMedia) ToPion() (sdp.MediaDescription, error) {
 	for _, codec := range m.Codecs {
 		styp := strconv.Itoa(int(codec.PayloadType))
 		formats = append(formats, styp)
-		attrs = append(attrs, []sdp.Attribute{
-			{Key: "rtpmap", Value: styp + " " + codec.Codec.Info().SDPName},
-			{Key: "fmtp", Value: styp + " " + strings.Join(codec.FmtpParts(), "; ")},
-			{Key: "rtcp-fb", Value: strings.Join(func() []string {
-				parts := make([]string, 0, len(codec.RTCPFB))
-				for _, fb := range codec.RTCPFB {
-					parts = append(parts, fb.Value)
-				}
-				return parts
-			}(), " ")},
-		}...)
+		attrs = append(attrs, sdp.Attribute{
+			Key: "rtpmap", Value: styp + " " + codec.Codec.Info().SDPName,
+		})
+
+		if len(codec.FMTP) > 0 {
+			attrs = append(attrs, sdp.Attribute{
+				Key:   "fmtp",
+				Value: styp + " " + strings.Join(codec.FmtpParts(), "; "),
+			})
+		}
+
+		if len(codec.RTCPFB) > 0 {
+			attrs = append(attrs, sdp.Attribute{
+				Key: "rtcp-fb",
+				Value: strings.Join(func() []string {
+					parts := make([]string, 0, len(codec.RTCPFB))
+					for _, fb := range codec.RTCPFB {
+						parts = append(parts, fb.Value)
+					}
+					return parts
+				}(), " "),
+			})
+		}
 	}
 
 	attrs = append(attrs, []sdp.Attribute{
-		{Key: "rtcp", Value: strconv.Itoa(int(m.RTCPPort))},
 		{Key: "ptime", Value: "20"},
 		{Key: "sendrecv"},
 	}...)
+	if m.RTCPPort != 0 {
+		attrs = append(attrs, sdp.Attribute{
+			Key: "rtcp", Value: strconv.Itoa(int(m.RTCPPort)),
+		})
+	}
 
 	md := sdp.MediaDescription{
 		MediaName: sdp.MediaName{
