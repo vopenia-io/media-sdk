@@ -228,6 +228,11 @@ func parseMediaSection(sd *sdp.SessionDescription, md *sdp.MediaDescription, kin
 		}
 	}
 
+	// RFC 3550: Default RTCP port to RTP port + 1 if not explicitly specified
+	if section.RTCPPort == 0 && section.Port > 0 {
+		section.RTCPPort = section.Port + 1
+	}
+
 	// Build codec map from rtpmap attributes
 	rtpMap := make(map[uint8]*Codec)
 	fmtpMap := make(map[uint8]map[string]string)
