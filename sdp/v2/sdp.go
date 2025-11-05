@@ -46,7 +46,9 @@ func (s *SDP) FromPion(sd sdp.SessionDescription) error {
 	for _, md := range sd.MediaDescriptions {
 		sm := &SDPMedia{}
 		if err := sm.FromPion(*md); err != nil {
-			return fmt.Errorf("failed to parse media description: %w", err)
+			// Skip unsupported media kinds (e.g., "application" for BFCP, H224)
+			// instead of failing the entire SDP parsing
+			continue
 		}
 		switch sm.Kind {
 		case MediaKindAudio:
@@ -54,7 +56,8 @@ func (s *SDP) FromPion(sd sdp.SessionDescription) error {
 		case MediaKindVideo:
 			s.Video = sm
 		default:
-			return fmt.Errorf("unsupported media kind: %s", sm.Kind)
+			// Skip unsupported media kinds
+			continue
 		}
 	}
 
