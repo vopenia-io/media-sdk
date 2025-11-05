@@ -87,6 +87,9 @@ func (m *SDPMedia) parseArributes(md sdp.MediaDescription) error {
 		fmtp   map[string]string
 	}
 	tracks := make(map[uint8]trackInfo)
+
+	m.Direction = DirectionSendRecv // Default direction
+
 	for _, attr := range md.Attributes {
 		switch attr.Key {
 		case "rtpmap":
@@ -169,6 +172,12 @@ func (m *SDPMedia) parseArributes(md sdp.MediaDescription) error {
 				Value: attr.Value,
 			})
 			tracks[uint8(typ)] = ti
+		case
+			string(DirectionSendRecv),
+			string(DirectionSendOnly),
+			string(DirectionRecvOnly),
+			string(DirectionInactive):
+			m.Direction = Direction(attr.Key)
 		default:
 			// Ignore unknown attributes for now
 		}
@@ -268,9 +277,13 @@ func (m *SDPMedia) ToPion() (sdp.MediaDescription, error) {
 			Key: "rtcp", Value: strconv.Itoa(int(m.RTCPPort)),
 		})
 	}
+	dir := m.Direction
+	if dir == "" {
+		dir = DirectionSendRecv
+	}
 	attrs = append(attrs, []sdp.Attribute{
 		{Key: "ptime", Value: "20"},
-		{Key: "sendrecv"},
+		{Key: string(dir)},
 	}...)
 
 	md := sdp.MediaDescription{
@@ -302,12 +315,16 @@ var _ interface {
 	SetDisabled(disabled bool) *SDPMediaBuilder
 	AddCodec(fn func(b *CodecBuilder) (*Codec, error), prefered bool) *SDPMediaBuilder
 	SetSecurity(security Security) *SDPMediaBuilder
+	SetDirection(direction Direction) *SDPMediaBuilder
 	SetKind(kind MediaKind) *SDPMediaBuilder
 } = (*SDPMediaBuilder)(nil)
 
 func (b *SDPMediaBuilder) Build() (*SDPMedia, error) {
 	if len(b.errs) > 0 {
 		return nil, fmt.Errorf("failed to build SDPMedia with %d errors: %w", len(b.errs), errors.Join(b.errs...))
+	}
+	if b.m.Direction == "" {
+		b.m.Direction = DirectionSendRecv
 	}
 	return b.m, nil
 }
@@ -344,6 +361,11 @@ func (b *SDPMediaBuilder) AddCodec(fn func(b *CodecBuilder) (*Codec, error), pre
 
 func (b *SDPMediaBuilder) SetSecurity(security Security) *SDPMediaBuilder {
 	panic("not implemented")
+}
+
+func (b *SDPMediaBuilder) SetDirection(direction Direction) *SDPMediaBuilder {
+	b.m.Direction = direction
+	return b
 }
 
 func (b *SDPMediaBuilder) SetKind(kind MediaKind) *SDPMediaBuilder {
