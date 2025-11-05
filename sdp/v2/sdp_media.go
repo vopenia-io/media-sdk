@@ -263,15 +263,15 @@ func (m *SDPMedia) ToPion() (sdp.MediaDescription, error) {
 		}
 	}
 
-	attrs = append(attrs, []sdp.Attribute{
-		{Key: "ptime", Value: "20"},
-		{Key: "sendrecv"},
-	}...)
 	if m.RTCPPort != 0 {
 		attrs = append(attrs, sdp.Attribute{
 			Key: "rtcp", Value: strconv.Itoa(int(m.RTCPPort)),
 		})
 	}
+	attrs = append(attrs, []sdp.Attribute{
+		{Key: "ptime", Value: "20"},
+		{Key: "sendrecv"},
+	}...)
 
 	md := sdp.MediaDescription{
 		MediaName: sdp.MediaName{
