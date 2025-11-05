@@ -31,13 +31,14 @@ var _ interface {
 // SDPMedia describes a single m= section while reusing pion's representation
 // for raw attributes and payloads.
 type SDPMedia struct {
-	Kind     MediaKind // Kind is the media type (audio, video, application, ...).
-	Disabled bool      // Disabled is true when the port is zero (rejected m=).
-	Codecs   []*Codec  // Codecs lists payload formats mapped onto media.Codec entries.
-	Codec    *Codec    // PreferredCodec is the selected codec for this track.
-	Security Security  // Security captures SRTP profiles signaled for the media section.
-	Port     uint16    // Port is the media port from the m= line.
-	RTCPPort uint16    // RTCPPort is the RTCP port from the m= line. (0 mean not specified)
+	Kind      MediaKind // Kind is the media type (audio, video, application, ...).
+	Disabled  bool      // Disabled is true when the port is zero (rejected m=).
+	Direction Direction // Direction indicates the media flow direction.
+	Codecs    []*Codec  // Codecs lists payload formats mapped onto media.Codec entries.
+	Codec     *Codec    // PreferredCodec is the selected codec for this track.
+	Security  Security  // Security captures SRTP profiles signaled for the media section.
+	Port      uint16    // Port is the media port from the m= line.
+	RTCPPort  uint16    // RTCPPort is the RTCP port from the m= line. (0 mean not specified)
 }
 
 var _ interface {
@@ -70,6 +71,34 @@ func ToMediaKind(s string) (MediaKind, bool) {
 		return MediaKindData, true
 	default:
 		return MediaKindAudio, false
+	}
+}
+
+type Direction string
+
+const (
+	DirectionSendRecv Direction = "sendrecv"
+	DirectionSendOnly Direction = "sendonly"
+	DirectionRecvOnly Direction = "recvonly"
+	DirectionInactive Direction = "inactive"
+)
+
+func (d Direction) IsSend() bool {
+	return d == DirectionSendRecv || d == DirectionSendOnly
+}
+
+func (d Direction) IsRecv() bool {
+	return d == DirectionSendRecv || d == DirectionRecvOnly
+}
+
+func (d Direction) Reverse() Direction {
+	switch d {
+	case DirectionSendOnly:
+		return DirectionRecvOnly
+	case DirectionRecvOnly:
+		return DirectionSendOnly
+	default:
+		return d
 	}
 }
 
