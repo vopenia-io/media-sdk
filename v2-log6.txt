@@ -1,0 +1,1 @@
+stat /home/vopenia/dev/media-sdk/cmd/livekit-sip: directory not found

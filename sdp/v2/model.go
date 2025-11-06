@@ -17,6 +17,7 @@ type SDP struct {
 	Addr  netip.Addr
 	Audio *SDPMedia
 	Video *SDPMedia
+	BFCP  *BFCPMedia // Phase 4.2: BFCP floor control for screen sharing
 }
 
 var _ interface {
@@ -124,4 +125,19 @@ var _ interface {
 type Security struct {
 	Mode     sdpv1.Encryption
 	Profiles []srtp.Profile
+}
+
+// BFCPMedia represents BFCP (Binary Floor Control Protocol) parameters for screen sharing.
+// Phase 4.2: Parse BFCP from SIP device SDP
+type BFCPMedia struct {
+	Port         uint16            // Port from m=application line
+	ConnectionIP netip.Addr        // Connection IP from c= line
+	FloorCtrl    string            // Floor control mode: "c-s", "c-only", "s-only"
+	ConferenceID uint32            // Conference ID from a=confid:
+	UserID       uint16            // User ID from a=userid:
+	FloorID      uint16            // Floor ID from a=floorid:
+	MediaStream  uint16            // Media stream ID from mstrm: in a=floorid:
+	Setup        string            // TCP setup role: "active", "passive", "actpass"
+	Connection   string            // Connection type: "new", "existing"
+	Attributes   map[string]string // Additional BFCP attributes
 }
