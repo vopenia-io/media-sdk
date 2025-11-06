@@ -44,10 +44,19 @@ func (s *SDP) FromPion(sd sdp.SessionDescription) error {
 	s.Addr = addr
 
 	for _, md := range sd.MediaDescriptions {
+		// Phase 4.2: Check if this is a BFCP application media
+		if md.MediaName.Media == "application" {
+			// Try to parse as BFCP
+			if bfcp, err := parseBFCP(*md, addr); err == nil {
+				s.BFCP = bfcp
+			}
+			// Skip adding to regular media sections
+			continue
+		}
+
 		sm := &SDPMedia{}
 		if err := sm.FromPion(*md); err != nil {
-			// Skip unsupported media kinds (e.g., "application" for BFCP, H224)
-			// instead of failing the entire SDP parsing
+			// Skip unsupported media kinds
 			continue
 		}
 		switch sm.Kind {
@@ -106,6 +115,11 @@ func (s *SDP) ToPion() (sdp.SessionDescription, error) {
 		}
 		sd.MediaDescriptions = append(sd.MediaDescriptions, &videoMD)
 	}
+	// Phase 4.3: Add BFCP application media to SDP answer
+	if s.BFCP != nil {
+		bfcpMD := bfcpToPion(s.BFCP)
+		sd.MediaDescriptions = append(sd.MediaDescriptions, &bfcpMD)
+	}
 
 	return sd, nil
 }
@@ -122,6 +136,17 @@ func (s *SDP) Clone() *SDP {
 	}
 	if s.Video != nil {
 		clone.Video = s.Video.Clone()
+	}
+	// Phase 4.2: Clone BFCP if present
+	if s.BFCP != nil {
+		bfcpClone := *s.BFCP
+		if s.BFCP.Attributes != nil {
+			bfcpClone.Attributes = make(map[string]string)
+			for k, v := range s.BFCP.Attributes {
+				bfcpClone.Attributes[k] = v
+			}
+		}
+		clone.BFCP = &bfcpClone
 	}
 	return clone
 }
@@ -176,4 +201,165 @@ func (b *SDPBuilder) SetAudio(fn func(b *SDPMediaBuilder) (*SDPMedia, error)) *S
 	}
 	b.s.Audio = m
 	return b
+}
+
+// SetBFCP sets BFCP application media in the SDP answer
+// Phase 4.3: Build BFCP SDP answer as server
+func (b *SDPBuilder) SetBFCP(bfcp *BFCPMedia) *SDPBuilder {
+	// Allow clearing BFCP by setting it to nil
+	b.s.BFCP = bfcp
+	return b
+}
+
+// parseBFCP extracts BFCP (Binary Floor Control Protocol) parameters from an application media description.
+// Phase 4.2: Parse BFCP from SIP device SDP
+func parseBFCP(md sdp.MediaDescription, defaultAddr netip.Addr) (*BFCPMedia, error) {
+	// Check if this is a BFCP media type
+	if md.MediaName.Media != "application" {
+		return nil, fmt.Errorf("not an application media")
+	}
+
+	// Check for TCP/BFCP or TCP/TLS/BFCP protocol
+	proto := ""
+	for _, p := range md.MediaName.Protos {
+		proto += p + "/"
+	}
+	if !contains(proto, "BFCP") {
+		return nil, fmt.Errorf("not a BFCP protocol: %s", proto)
+	}
+
+	bfcp := &BFCPMedia{
+		Port:       uint16(md.MediaName.Port.Value),
+		Attributes: make(map[string]string),
+	}
+
+	// Get connection address (prefer media-level, fallback to session-level)
+	if md.ConnectionInformation != nil && md.ConnectionInformation.Address != nil {
+		if addr, err := netip.ParseAddr(md.ConnectionInformation.Address.Address); err == nil {
+			bfcp.ConnectionIP = addr
+		}
+	}
+	if !bfcp.ConnectionIP.IsValid() {
+		bfcp.ConnectionIP = defaultAddr
+	}
+
+	// Parse BFCP-specific attributes
+	for _, attr := range md.Attributes {
+		switch attr.Key {
+		case "floorctrl":
+			bfcp.FloorCtrl = attr.Value
+		case "confid":
+			if val, err := parseUint32(attr.Value); err == nil {
+				bfcp.ConferenceID = val
+			}
+		case "userid":
+			if val, err := parseUint16(attr.Value); err == nil {
+				bfcp.UserID = val
+			}
+		case "floorid":
+			// Format: "floorid:<id> mstrm:<stream>"
+			bfcp.FloorID, bfcp.MediaStream = parseFloorID(attr.Value)
+		case "setup":
+			bfcp.Setup = attr.Value
+		case "connection":
+			bfcp.Connection = attr.Value
+		default:
+			// Store other attributes for potential future use
+			bfcp.Attributes[attr.Key] = attr.Value
+		}
+	}
+
+	return bfcp, nil
+}
+
+// Helper functions for parsing
+func contains(s, substr string) bool {
+	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) >= len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || findInString(s, substr)))
+}
+
+func findInString(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func parseUint32(s string) (uint32, error) {
+	var val uint32
+	_, err := fmt.Sscanf(s, "%d", &val)
+	return val, err
+}
+
+func parseUint16(s string) (uint16, error) {
+	var val uint16
+	_, err := fmt.Sscanf(s, "%d", &val)
+	return val, err
+}
+
+// parseFloorID parses "floorid:<id> mstrm:<stream>" format
+func parseFloorID(value string) (floorID uint16, mediaStream uint16) {
+	// Example: "1 mstrm:3" or just "1"
+	var fid, mstr uint16
+	if n, _ := fmt.Sscanf(value, "%d mstrm:%d", &fid, &mstr); n >= 1 {
+		floorID = fid
+		mediaStream = mstr
+	}
+	return
+}
+
+// bfcpToPion converts BFCPMedia to pion MediaDescription
+// Phase 4.3: Build BFCP SDP answer as server
+func bfcpToPion(bfcp *BFCPMedia) sdp.MediaDescription {
+	md := sdp.MediaDescription{
+		MediaName: sdp.MediaName{
+			Media: "application",
+			Port: sdp.RangedPort{
+				Value: int(bfcp.Port),
+			},
+			Protos:  []string{"TCP", "BFCP"},
+			Formats: []string{"*"},
+		},
+	}
+
+	// Add connection information if specified
+	if bfcp.ConnectionIP.IsValid() {
+		md.ConnectionInformation = &sdp.ConnectionInformation{
+			NetworkType: "IN",
+			AddressType: "IP4",
+			Address:     &sdp.Address{Address: bfcp.ConnectionIP.String()},
+		}
+	}
+
+	// Add BFCP attributes
+	if bfcp.FloorCtrl != "" {
+		md.Attributes = append(md.Attributes, sdp.Attribute{Key: "floorctrl", Value: bfcp.FloorCtrl})
+	}
+	if bfcp.ConferenceID > 0 {
+		md.Attributes = append(md.Attributes, sdp.Attribute{Key: "confid", Value: fmt.Sprintf("%d", bfcp.ConferenceID)})
+	}
+	if bfcp.UserID > 0 {
+		md.Attributes = append(md.Attributes, sdp.Attribute{Key: "userid", Value: fmt.Sprintf("%d", bfcp.UserID)})
+	}
+	if bfcp.FloorID > 0 {
+		floorIDValue := fmt.Sprintf("%d", bfcp.FloorID)
+		if bfcp.MediaStream > 0 {
+			floorIDValue += fmt.Sprintf(" mstrm:%d", bfcp.MediaStream)
+		}
+		md.Attributes = append(md.Attributes, sdp.Attribute{Key: "floorid", Value: floorIDValue})
+	}
+	if bfcp.Setup != "" {
+		md.Attributes = append(md.Attributes, sdp.Attribute{Key: "setup", Value: bfcp.Setup})
+	}
+	if bfcp.Connection != "" {
+		md.Attributes = append(md.Attributes, sdp.Attribute{Key: "connection", Value: bfcp.Connection})
+	}
+
+	// Add any additional attributes
+	for key, value := range bfcp.Attributes {
+		md.Attributes = append(md.Attributes, sdp.Attribute{Key: key, Value: value})
+	}
+
+	return md
 }
