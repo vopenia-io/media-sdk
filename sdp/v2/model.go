@@ -14,10 +14,11 @@ import (
 // The raw SDP remains available for round-tripping while Media holds
 // higher-level details extracted from each m= block.
 type SDP struct {
-	Addr  netip.Addr
-	Audio *SDPMedia
-	Video *SDPMedia
-	BFCP  *BFCPMedia // Phase 4.2: BFCP floor control for screen sharing
+	Addr             netip.Addr
+	Audio            *SDPMedia
+	Video            *SDPMedia  // Camera/main video
+	ScreenShareVideo *SDPMedia  // Screen share video (Phase 5.3)
+	BFCP             *BFCPMedia // Phase 4.2: BFCP floor control for screen sharing
 }
 
 var _ interface {

@@ -63,7 +63,19 @@ func (s *SDP) FromPion(sd sdp.SessionDescription) error {
 		case MediaKindAudio:
 			s.Audio = sm
 		case MediaKindVideo:
-			s.Video = sm
+			// Phase 5.3: Check if this is screen share video (content:slides)
+			isScreenShare := false
+			for _, attr := range md.Attributes {
+				if attr.Key == "content" && attr.Value == "slides" {
+					isScreenShare = true
+					break
+				}
+			}
+			if isScreenShare {
+				s.ScreenShareVideo = sm
+			} else {
+				s.Video = sm
+			}
 		default:
 			// Skip unsupported media kinds
 			continue
@@ -115,6 +127,16 @@ func (s *SDP) ToPion() (sdp.SessionDescription, error) {
 		}
 		sd.MediaDescriptions = append(sd.MediaDescriptions, &videoMD)
 	}
+	// Phase 5.3: Add screen share video with content:slides attribute
+	if s.ScreenShareVideo != nil {
+		screenShareMD, err := s.ScreenShareVideo.ToPion()
+		if err != nil {
+			return sd, fmt.Errorf("failed to convert screen share video media: %w", err)
+		}
+		// Add content:slides attribute to mark this as presentation content
+		screenShareMD.Attributes = append(screenShareMD.Attributes, sdp.Attribute{Key: "content", Value: "slides"})
+		sd.MediaDescriptions = append(sd.MediaDescriptions, &screenShareMD)
+	}
 	// Phase 4.3: Add BFCP application media to SDP answer
 	if s.BFCP != nil {
 		bfcpMD := bfcpToPion(s.BFCP)
@@ -136,6 +158,10 @@ func (s *SDP) Clone() *SDP {
 	}
 	if s.Video != nil {
 		clone.Video = s.Video.Clone()
+	}
+	// Phase 5.3: Clone screen share video if present
+	if s.ScreenShareVideo != nil {
+		clone.ScreenShareVideo = s.ScreenShareVideo.Clone()
 	}
 	// Phase 4.2: Clone BFCP if present
 	if s.BFCP != nil {
@@ -165,6 +191,7 @@ var _ interface {
 	SetAddress(netip.Addr) *SDPBuilder
 	SetVideo(func(b *SDPMediaBuilder) (*SDPMedia, error)) *SDPBuilder
 	SetAudio(func(b *SDPMediaBuilder) (*SDPMedia, error)) *SDPBuilder
+	SetScreenShareVideo(func(b *SDPMediaBuilder) (*SDPMedia, error)) *SDPBuilder
 } = (*SDPBuilder)(nil)
 
 func (b *SDPBuilder) Build() (*SDP, error) {
@@ -200,6 +227,20 @@ func (b *SDPBuilder) SetAudio(fn func(b *SDPMediaBuilder) (*SDPMedia, error)) *S
 		return b
 	}
 	b.s.Audio = m
+	return b
+}
+
+// SetScreenShareVideo sets screen share video media in the SDP
+// Phase 5.3: Build screen share video with content:slides
+func (b *SDPBuilder) SetScreenShareVideo(fn func(b *SDPMediaBuilder) (*SDPMedia, error)) *SDPBuilder {
+	mb := &SDPMediaBuilder{m: &SDPMedia{}}
+	mb.SetKind(MediaKindVideo)
+	m, err := fn(mb)
+	if err != nil {
+		b.errs = append(b.errs, err)
+		return b
+	}
+	b.s.ScreenShareVideo = m
 	return b
 }
 
