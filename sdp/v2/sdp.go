@@ -133,8 +133,7 @@ func (s *SDP) ToPion() (sdp.SessionDescription, error) {
 		if err != nil {
 			return sd, fmt.Errorf("failed to convert screen share video media: %w", err)
 		}
-		// Add content:slides attribute to mark this as presentation content
-		screenShareMD.Attributes = append(screenShareMD.Attributes, sdp.Attribute{Key: "content", Value: "slides"})
+		// Content attribute is already added in ToPion() if Content field is set
 		sd.MediaDescriptions = append(sd.MediaDescriptions, &screenShareMD)
 	}
 	// Phase 4.3: Add BFCP application media to SDP answer
@@ -272,6 +271,7 @@ func parseBFCP(md sdp.MediaDescription, defaultAddr netip.Addr) (*BFCPMedia, err
 	bfcp := &BFCPMedia{
 		Port:       uint16(md.MediaName.Port.Value),
 		Attributes: make(map[string]string),
+		Floors:     []BFCPFloor{},
 	}
 
 	// Get connection address (prefer media-level, fallback to session-level)
@@ -299,7 +299,17 @@ func parseBFCP(md sdp.MediaDescription, defaultAddr netip.Addr) (*BFCPMedia, err
 			}
 		case "floorid":
 			// Format: "floorid:<id> mstrm:<stream>"
-			bfcp.FloorID, bfcp.MediaStream = parseFloorID(attr.Value)
+			floorID, mediaStream := parseFloorID(attr.Value)
+			// Store in deprecated fields for backward compatibility
+			if bfcp.FloorID == 0 {
+				bfcp.FloorID = floorID
+				bfcp.MediaStream = mediaStream
+			}
+			// Also store in new Floors slice
+			bfcp.Floors = append(bfcp.Floors, BFCPFloor{
+				FloorID:     floorID,
+				MediaStream: mediaStream,
+			})
 		case "setup":
 			bfcp.Setup = attr.Value
 		case "connection":
@@ -383,13 +393,25 @@ func bfcpToPion(bfcp *BFCPMedia) sdp.MediaDescription {
 	if bfcp.UserID > 0 {
 		md.Attributes = append(md.Attributes, sdp.Attribute{Key: "userid", Value: fmt.Sprintf("%d", bfcp.UserID)})
 	}
-	if bfcp.FloorID > 0 {
+
+	// Add multiple floor IDs if available in Floors slice
+	if len(bfcp.Floors) > 0 {
+		for _, floor := range bfcp.Floors {
+			floorIDValue := fmt.Sprintf("%d", floor.FloorID)
+			if floor.MediaStream > 0 {
+				floorIDValue += fmt.Sprintf(" mstrm:%d", floor.MediaStream)
+			}
+			md.Attributes = append(md.Attributes, sdp.Attribute{Key: "floorid", Value: floorIDValue})
+		}
+	} else if bfcp.FloorID > 0 {
+		// Fallback to deprecated single floor ID for backward compatibility
 		floorIDValue := fmt.Sprintf("%d", bfcp.FloorID)
 		if bfcp.MediaStream > 0 {
 			floorIDValue += fmt.Sprintf(" mstrm:%d", bfcp.MediaStream)
 		}
 		md.Attributes = append(md.Attributes, sdp.Attribute{Key: "floorid", Value: floorIDValue})
 	}
+
 	if bfcp.Setup != "" {
 		md.Attributes = append(md.Attributes, sdp.Attribute{Key: "setup", Value: bfcp.Setup})
 	}

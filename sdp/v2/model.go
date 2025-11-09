@@ -41,6 +41,13 @@ type SDPMedia struct {
 	Security  Security  // Security captures SRTP profiles signaled for the media section.
 	Port      uint16    // Port is the media port from the m= line.
 	RTCPPort  uint16    // RTCPPort is the RTCP port from the m= line. (0 mean not specified)
+
+	// Bandwidth constraints (kbps for AS, bps for TIAS)
+	BandwidthAS   uint32 // Application-Specific Maximum (b=AS:) in kbps
+	BandwidthTIAS uint32 // Transport Independent Application Specific Maximum (b=TIAS:) in bps
+
+	// Content attribute for identifying video stream purpose
+	Content string // Content type: "main" or "slides" (a=content:)
 }
 
 var _ interface {
@@ -136,9 +143,16 @@ type BFCPMedia struct {
 	FloorCtrl    string            // Floor control mode: "c-s", "c-only", "s-only"
 	ConferenceID uint32            // Conference ID from a=confid:
 	UserID       uint16            // User ID from a=userid:
-	FloorID      uint16            // Floor ID from a=floorid:
-	MediaStream  uint16            // Media stream ID from mstrm: in a=floorid:
+	FloorID      uint16            // Floor ID from a=floorid: (deprecated, use Floors instead)
+	MediaStream  uint16            // Media stream ID from mstrm: in a=floorid: (deprecated, use Floors instead)
+	Floors       []BFCPFloor       // Multiple floor IDs with their media streams
 	Setup        string            // TCP setup role: "active", "passive", "actpass"
 	Connection   string            // Connection type: "new", "existing"
 	Attributes   map[string]string // Additional BFCP attributes
+}
+
+// BFCPFloor represents a BFCP floor ID and its associated media stream
+type BFCPFloor struct {
+	FloorID     uint16 // Floor ID
+	MediaStream uint16 // Media stream ID
 }

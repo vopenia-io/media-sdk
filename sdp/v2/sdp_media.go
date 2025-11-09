@@ -47,6 +47,7 @@ func (m *SDPMedia) Clone() *SDPMedia {
 	return &SDPMedia{
 		Kind:     m.Kind,
 		Disabled: m.Disabled,
+		Direction: m.Direction,
 		Codecs: func() []*Codec {
 			if m.Codecs == nil {
 				return nil
@@ -74,8 +75,11 @@ func (m *SDPMedia) Clone() *SDPMedia {
 			}(),
 			Mode: m.Security.Mode,
 		},
-		Port:     m.Port,
-		RTCPPort: m.RTCPPort,
+		Port:          m.Port,
+		RTCPPort:      m.RTCPPort,
+		BandwidthAS:   m.BandwidthAS,
+		BandwidthTIAS: m.BandwidthTIAS,
+		Content:       m.Content,
 	}
 }
 
@@ -172,6 +176,8 @@ func (m *SDPMedia) parseArributes(md sdp.MediaDescription) error {
 				Value: attr.Value,
 			})
 			tracks[uint8(typ)] = ti
+		case "content":
+			m.Content = attr.Value
 		case
 			string(DirectionSendRecv),
 			string(DirectionSendOnly),
@@ -180,6 +186,16 @@ func (m *SDPMedia) parseArributes(md sdp.MediaDescription) error {
 			m.Direction = Direction(attr.Key)
 		default:
 			// Ignore unknown attributes for now
+		}
+	}
+
+	// Parse bandwidth lines from media description
+	for _, bw := range md.Bandwidth {
+		switch bw.Type {
+		case "AS":
+			m.BandwidthAS = uint32(bw.Bandwidth)
+		case "TIAS":
+			m.BandwidthTIAS = uint32(bw.Bandwidth)
 		}
 	}
 
@@ -277,6 +293,14 @@ func (m *SDPMedia) ToPion() (sdp.MediaDescription, error) {
 			Key: "rtcp", Value: strconv.Itoa(int(m.RTCPPort)),
 		})
 	}
+
+	// Add content attribute if specified
+	if m.Content != "" {
+		attrs = append(attrs, sdp.Attribute{
+			Key: "content", Value: m.Content,
+		})
+	}
+
 	dir := m.Direction
 	if dir == "" {
 		dir = DirectionSendRecv
@@ -294,6 +318,23 @@ func (m *SDPMedia) ToPion() (sdp.MediaDescription, error) {
 			Formats: formats,
 		},
 		Attributes: attrs,
+	}
+
+	// Add bandwidth lines if specified
+	if m.BandwidthAS > 0 || m.BandwidthTIAS > 0 {
+		md.Bandwidth = []sdp.Bandwidth{}
+		if m.BandwidthAS > 0 {
+			md.Bandwidth = append(md.Bandwidth, sdp.Bandwidth{
+				Type:      "AS",
+				Bandwidth: uint64(m.BandwidthAS),
+			})
+		}
+		if m.BandwidthTIAS > 0 {
+			md.Bandwidth = append(md.Bandwidth, sdp.Bandwidth{
+				Type:      "TIAS",
+				Bandwidth: uint64(m.BandwidthTIAS),
+			})
+		}
 	}
 
 	return md, nil
@@ -317,6 +358,9 @@ var _ interface {
 	SetSecurity(security Security) *SDPMediaBuilder
 	SetDirection(direction Direction) *SDPMediaBuilder
 	SetKind(kind MediaKind) *SDPMediaBuilder
+	SetBandwidthAS(kbps uint32) *SDPMediaBuilder
+	SetBandwidthTIAS(bps uint32) *SDPMediaBuilder
+	SetContent(content string) *SDPMediaBuilder
 } = (*SDPMediaBuilder)(nil)
 
 func (b *SDPMediaBuilder) Build() (*SDPMedia, error) {
@@ -370,5 +414,20 @@ func (b *SDPMediaBuilder) SetDirection(direction Direction) *SDPMediaBuilder {
 
 func (b *SDPMediaBuilder) SetKind(kind MediaKind) *SDPMediaBuilder {
 	b.m.Kind = kind
+	return b
+}
+
+func (b *SDPMediaBuilder) SetBandwidthAS(kbps uint32) *SDPMediaBuilder {
+	b.m.BandwidthAS = kbps
+	return b
+}
+
+func (b *SDPMediaBuilder) SetBandwidthTIAS(bps uint32) *SDPMediaBuilder {
+	b.m.BandwidthTIAS = bps
+	return b
+}
+
+func (b *SDPMediaBuilder) SetContent(content string) *SDPMediaBuilder {
+	b.m.Content = content
 	return b
 }
