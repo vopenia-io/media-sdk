@@ -80,6 +80,7 @@ func (m *SDPMedia) Clone() *SDPMedia {
 		BandwidthAS:   m.BandwidthAS,
 		BandwidthTIAS: m.BandwidthTIAS,
 		Content:       m.Content,
+		Label:         m.Label,
 	}
 }
 
@@ -301,6 +302,13 @@ func (m *SDPMedia) ToPion() (sdp.MediaDescription, error) {
 		})
 	}
 
+	// Add label attribute if specified (for BFCP correlation)
+	if m.Label != "" {
+		attrs = append(attrs, sdp.Attribute{
+			Key: "label", Value: m.Label,
+		})
+	}
+
 	dir := m.Direction
 	if dir == "" {
 		dir = DirectionSendRecv
@@ -361,6 +369,7 @@ var _ interface {
 	SetBandwidthAS(kbps uint32) *SDPMediaBuilder
 	SetBandwidthTIAS(bps uint32) *SDPMediaBuilder
 	SetContent(content string) *SDPMediaBuilder
+	SetLabel(label string) *SDPMediaBuilder
 } = (*SDPMediaBuilder)(nil)
 
 func (b *SDPMediaBuilder) Build() (*SDPMedia, error) {
@@ -429,5 +438,10 @@ func (b *SDPMediaBuilder) SetBandwidthTIAS(bps uint32) *SDPMediaBuilder {
 
 func (b *SDPMediaBuilder) SetContent(content string) *SDPMediaBuilder {
 	b.m.Content = content
+	return b
+}
+
+func (b *SDPMediaBuilder) SetLabel(label string) *SDPMediaBuilder {
+	b.m.Label = label
 	return b
 }

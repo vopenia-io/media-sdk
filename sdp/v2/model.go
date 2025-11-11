@@ -48,6 +48,9 @@ type SDPMedia struct {
 
 	// Content attribute for identifying video stream purpose
 	Content string // Content type: "main" or "slides" (a=content:)
+
+	// Label attribute for correlating with BFCP media streams
+	Label string // Media stream label (a=label:) - used with BFCP mstrm parameter
 }
 
 var _ interface {
