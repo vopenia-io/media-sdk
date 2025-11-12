@@ -45,8 +45,8 @@ func (m *SDPMedia) SelectCodec() error {
 
 func (m *SDPMedia) Clone() *SDPMedia {
 	return &SDPMedia{
-		Kind:     m.Kind,
-		Disabled: m.Disabled,
+		Kind:      m.Kind,
+		Disabled:  m.Disabled,
 		Direction: m.Direction,
 		Codecs: func() []*Codec {
 			if m.Codecs == nil {
@@ -363,6 +363,8 @@ var _ interface {
 	SetRTCPPort(port uint16) *SDPMediaBuilder
 	SetDisabled(disabled bool) *SDPMediaBuilder
 	AddCodec(fn func(b *CodecBuilder) (*Codec, error), prefered bool) *SDPMediaBuilder
+	WithDefaultCodecs() *SDPMediaBuilder
+	DelCodec(payloadType uint8) *SDPMediaBuilder
 	SetSecurity(security Security) *SDPMediaBuilder
 	SetDirection(direction Direction) *SDPMediaBuilder
 	SetKind(kind MediaKind) *SDPMediaBuilder
@@ -398,6 +400,9 @@ func (b *SDPMediaBuilder) SetDisabled(disabled bool) *SDPMediaBuilder {
 }
 
 func (b *SDPMediaBuilder) AddCodec(fn func(b *CodecBuilder) (*Codec, error), prefered bool) *SDPMediaBuilder {
+	if fn == nil {
+		return b
+	}
 	c := &Codec{}
 	cb := c.Builder()
 	c, err := fn(cb)
@@ -405,9 +410,38 @@ func (b *SDPMediaBuilder) AddCodec(fn func(b *CodecBuilder) (*Codec, error), pre
 		b.errs = append(b.errs, err)
 		return b
 	}
-	b.m.Codecs = append(b.m.Codecs, c)
 	if prefered {
 		b.m.Codec = c
+	}
+	if c == nil {
+		return b
+	}
+	b = b.DelCodec(c.PayloadType)
+	b.m.Codecs = append(b.m.Codecs, c)
+	return b
+}
+
+func (b *SDPMediaBuilder) WithDefaultCodecs() *SDPMediaBuilder {
+	for _, c := range media.Codecs() {
+		b = b.AddCodec(func(cb *CodecBuilder) (*Codec, error) {
+			return cb.
+				SetCodec(c).
+				Build()
+		}, false)
+	}
+	return b
+}
+
+func (b *SDPMediaBuilder) DelCodec(payloadType uint8) *SDPMediaBuilder {
+	newCodecs := make([]*Codec, 0, len(b.m.Codecs))
+	for _, c := range b.m.Codecs {
+		if c.PayloadType != payloadType {
+			newCodecs = append(newCodecs, c)
+		}
+	}
+	b.m.Codecs = newCodecs
+	if b.m.Codec != nil && b.m.Codec.PayloadType == payloadType {
+		b.m.Codec = nil
 	}
 	return b
 }
