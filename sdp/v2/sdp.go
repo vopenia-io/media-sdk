@@ -3,6 +3,7 @@ package v2
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"net/netip"
 
@@ -43,20 +44,74 @@ func (s *SDP) FromPion(sd sdp.SessionDescription) error {
 	}
 	s.Addr = addr
 
-	for _, md := range sd.MediaDescriptions {
+	slog.Debug("SDP FromPion: parsing session",
+		"origin", sd.Origin.UnicastAddress,
+		"sessionName", string(sd.SessionName),
+		"mediaCount", len(sd.MediaDescriptions),
+	)
+
+	for i, md := range sd.MediaDescriptions {
+		slog.Debug("SDP FromPion: media description",
+			"index", i,
+			"mediaName", md.MediaName.Media,
+			"port", md.MediaName.Port.Value,
+			"proto", md.MediaName.Protos,
+			"formats", md.MediaName.Formats,
+		)
+
+		// Log all attributes for debugging (useful for BFCP)
+		for _, attr := range md.Attributes {
+			slog.Debug("SDP FromPion: media attribute",
+				"index", i,
+				"mediaName", md.MediaName.Media,
+				"attrKey", attr.Key,
+				"attrValue", attr.Value,
+			)
+		}
+
 		sm := &SDPMedia{}
 		if err := sm.FromPion(*md); err != nil {
 			// Skip unsupported media kinds (e.g., "application" for BFCP, H224)
 			// instead of failing the entire SDP parsing
+			slog.Debug("SDP FromPion: skipping unsupported media",
+				"index", i,
+				"mediaName", md.MediaName.Media,
+				"error", err.Error(),
+			)
 			continue
 		}
 		switch sm.Kind {
 		case MediaKindAudio:
 			s.Audio = sm
+			slog.Debug("SDP FromPion: parsed audio media",
+				"port", sm.Port,
+				"direction", sm.Direction,
+				"codecCount", len(sm.Codecs),
+			)
 		case MediaKindVideo:
-			s.Video = sm
+			// Check if this is screenshare (content:slides) or camera video
+			if sm.Content == ContentTypeSlides {
+				s.Screenshare = sm
+				slog.Debug("SDP FromPion: parsed screenshare media",
+					"port", sm.Port,
+					"direction", sm.Direction,
+					"content", sm.Content,
+					"codecCount", len(sm.Codecs),
+				)
+			} else {
+				s.Video = sm
+				slog.Debug("SDP FromPion: parsed video media",
+					"port", sm.Port,
+					"direction", sm.Direction,
+					"content", sm.Content,
+					"codecCount", len(sm.Codecs),
+				)
+			}
 		default:
 			// Skip unsupported media kinds
+			slog.Debug("SDP FromPion: skipping unknown media kind",
+				"kind", sm.Kind,
+			)
 			continue
 		}
 	}
@@ -66,6 +121,12 @@ func (s *SDP) FromPion(sd sdp.SessionDescription) error {
 
 func (s *SDP) ToPion() (sdp.SessionDescription, error) {
 	sessId := rand.Uint64() // TODO: do we need to track these?
+
+	slog.Debug("SDP ToPion: generating session",
+		"addr", s.Addr.String(),
+		"hasAudio", s.Audio != nil,
+		"hasVideo", s.Video != nil,
+	)
 
 	sd := sdp.SessionDescription{
 		Version: 0,
@@ -98,6 +159,10 @@ func (s *SDP) ToPion() (sdp.SessionDescription, error) {
 			return sd, fmt.Errorf("failed to convert audio media: %w", err)
 		}
 		sd.MediaDescriptions = append(sd.MediaDescriptions, &audioMD)
+		slog.Debug("SDP ToPion: added audio media",
+			"port", audioMD.MediaName.Port.Value,
+			"proto", audioMD.MediaName.Protos,
+		)
 	}
 	if s.Video != nil {
 		videoMD, err := s.Video.ToPion()
@@ -105,7 +170,27 @@ func (s *SDP) ToPion() (sdp.SessionDescription, error) {
 			return sd, fmt.Errorf("failed to convert video media: %w", err)
 		}
 		sd.MediaDescriptions = append(sd.MediaDescriptions, &videoMD)
+		slog.Debug("SDP ToPion: added video media",
+			"port", videoMD.MediaName.Port.Value,
+			"proto", videoMD.MediaName.Protos,
+		)
 	}
+	if s.Screenshare != nil {
+		screenshareMD, err := s.Screenshare.ToPion()
+		if err != nil {
+			return sd, fmt.Errorf("failed to convert screenshare media: %w", err)
+		}
+		sd.MediaDescriptions = append(sd.MediaDescriptions, &screenshareMD)
+		slog.Debug("SDP ToPion: added screenshare media",
+			"port", screenshareMD.MediaName.Port.Value,
+			"proto", screenshareMD.MediaName.Protos,
+			"content", s.Screenshare.Content,
+		)
+	}
+
+	slog.Debug("SDP ToPion: complete",
+		"mediaCount", len(sd.MediaDescriptions),
+	)
 
 	return sd, nil
 }
@@ -122,6 +207,9 @@ func (s *SDP) Clone() *SDP {
 	}
 	if s.Video != nil {
 		clone.Video = s.Video.Clone()
+	}
+	if s.Screenshare != nil {
+		clone.Screenshare = s.Screenshare.Clone()
 	}
 	return clone
 }
@@ -140,6 +228,7 @@ var _ interface {
 	SetAddress(netip.Addr) *SDPBuilder
 	SetVideo(func(b *SDPMediaBuilder) (*SDPMedia, error)) *SDPBuilder
 	SetAudio(func(b *SDPMediaBuilder) (*SDPMedia, error)) *SDPBuilder
+	SetScreenshare(func(b *SDPMediaBuilder) (*SDPMedia, error)) *SDPBuilder
 } = (*SDPBuilder)(nil)
 
 func (b *SDPBuilder) Build() (*SDP, error) {
@@ -175,5 +264,18 @@ func (b *SDPBuilder) SetAudio(fn func(b *SDPMediaBuilder) (*SDPMedia, error)) *S
 		return b
 	}
 	b.s.Audio = m
+	return b
+}
+
+func (b *SDPBuilder) SetScreenshare(fn func(b *SDPMediaBuilder) (*SDPMedia, error)) *SDPBuilder {
+	mb := &SDPMediaBuilder{m: &SDPMedia{}}
+	mb.SetKind(MediaKindVideo)
+	mb.SetContent(ContentTypeSlides)
+	m, err := fn(mb)
+	if err != nil {
+		b.errs = append(b.errs, err)
+		return b
+	}
+	b.s.Screenshare = m
 	return b
 }
