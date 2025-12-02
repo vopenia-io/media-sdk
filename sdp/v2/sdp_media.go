@@ -406,3 +406,20 @@ func (b *SDPMediaBuilder) SetLabel(label uint16) *SDPMediaBuilder {
 	b.m.Label = label
 	return b
 }
+
+// NewScreenshareMediaFromCodec creates a screenshare SDPMedia using the given codec.
+// This preserves the codec's PayloadType for compatibility with SIP devices that
+// require consistent payload types between camera and content streams.
+func NewScreenshareMediaFromCodec(codec *Codec, rtpPort, rtcpPort uint16, label uint16) *SDPMedia {
+	c := codec.Clone()
+	return &SDPMedia{
+		Kind:      MediaKindVideo,
+		Content:   ContentTypeSlides,
+		Direction: DirectionSendOnly,
+		Label:     label,
+		Codec:     c,
+		Codecs:    []*Codec{c},
+		Port:      rtpPort,
+		RTCPPort:  rtcpPort,
+	}
+}
