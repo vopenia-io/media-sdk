@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/netip"
+	"strings"
 
 	"github.com/pion/sdp/v3"
 )
@@ -69,9 +70,32 @@ func (s *SDP) FromPion(sd sdp.SessionDescription) error {
 			)
 		}
 
+		// Check for BFCP media (application with BFCP protocol)
+		if md.MediaName.Media == "application" {
+			proto := strings.Join(md.MediaName.Protos, "/")
+			if strings.Contains(strings.ToUpper(proto), "BFCP") {
+				bfcp := &SDPBfcp{}
+				if err := bfcp.FromPion(*md); err != nil {
+					slog.Debug("SDP FromPion: skipping invalid BFCP",
+						"index", i,
+						"error", err.Error(),
+					)
+					continue
+				}
+				s.BFCP = bfcp
+				slog.Debug("SDP FromPion: parsed BFCP media",
+					"port", bfcp.Port,
+					"proto", bfcp.Proto,
+					"setup", bfcp.Setup,
+					"floorctrl", bfcp.FloorCtrl,
+				)
+				continue
+			}
+		}
+
 		sm := &SDPMedia{}
 		if err := sm.FromPion(*md); err != nil {
-			// Skip unsupported media kinds (e.g., "application" for BFCP, H224)
+			// Skip unsupported media kinds (e.g., "application" for H224)
 			// instead of failing the entire SDP parsing
 			slog.Debug("SDP FromPion: skipping unsupported media",
 				"index", i,
@@ -126,6 +150,8 @@ func (s *SDP) ToPion() (sdp.SessionDescription, error) {
 		"addr", s.Addr.String(),
 		"hasAudio", s.Audio != nil,
 		"hasVideo", s.Video != nil,
+		"hasScreenshare", s.Screenshare != nil,
+		"hasBFCP", s.BFCP != nil,
 	)
 
 	sd := sdp.SessionDescription{
@@ -187,6 +213,17 @@ func (s *SDP) ToPion() (sdp.SessionDescription, error) {
 			"content", s.Screenshare.Content,
 		)
 	}
+	if s.BFCP != nil && !s.BFCP.Disabled {
+		bfcpMD, err := s.BFCP.ToPion()
+		if err != nil {
+			return sd, fmt.Errorf("failed to convert BFCP media: %w", err)
+		}
+		sd.MediaDescriptions = append(sd.MediaDescriptions, &bfcpMD)
+		slog.Debug("SDP ToPion: added BFCP media",
+			"port", bfcpMD.MediaName.Port.Value,
+			"proto", bfcpMD.MediaName.Protos,
+		)
+	}
 
 	slog.Debug("SDP ToPion: complete",
 		"mediaCount", len(sd.MediaDescriptions),
@@ -211,6 +248,9 @@ func (s *SDP) Clone() *SDP {
 	if s.Screenshare != nil {
 		clone.Screenshare = s.Screenshare.Clone()
 	}
+	if s.BFCP != nil {
+		clone.BFCP = s.BFCP.Clone()
+	}
 	return clone
 }
 
@@ -229,6 +269,7 @@ var _ interface {
 	SetVideo(func(b *SDPMediaBuilder) (*SDPMedia, error)) *SDPBuilder
 	SetAudio(func(b *SDPMediaBuilder) (*SDPMedia, error)) *SDPBuilder
 	SetScreenshare(func(b *SDPMediaBuilder) (*SDPMedia, error)) *SDPBuilder
+	SetBFCP(func(b *SDPBfcpBuilder) (*SDPBfcp, error)) *SDPBuilder
 } = (*SDPBuilder)(nil)
 
 func (b *SDPBuilder) Build() (*SDP, error) {
@@ -277,5 +318,16 @@ func (b *SDPBuilder) SetScreenshare(fn func(b *SDPMediaBuilder) (*SDPMedia, erro
 		return b
 	}
 	b.s.Screenshare = m
+	return b
+}
+
+func (b *SDPBuilder) SetBFCP(fn func(b *SDPBfcpBuilder) (*SDPBfcp, error)) *SDPBuilder {
+	bb := NewSDPBfcpBuilder()
+	bfcp, err := fn(bb)
+	if err != nil {
+		b.errs = append(b.errs, err)
+		return b
+	}
+	b.s.BFCP = bfcp
 	return b
 }
