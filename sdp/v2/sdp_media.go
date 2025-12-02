@@ -407,6 +407,34 @@ func (b *SDPMediaBuilder) SetLabel(label uint16) *SDPMediaBuilder {
 	return b
 }
 
+// PrepareForSending prepares an SDPMedia answer for sending data.
+// This is called after receiving an SDP answer when we want to send media to the remote.
+// It performs:
+// 1. Codec selection if not already set (picks first codec from Codecs list)
+// 2. Direction reversal (recvonly in answer means we sendonly)
+//
+// The remote's answer says "recvonly" (they will receive), so from our perspective
+// we need "sendonly" (we will send). This method handles that transformation.
+func (m *SDPMedia) PrepareForSending() error {
+	if m == nil || m.Disabled {
+		return nil
+	}
+
+	// Select a codec if not already selected
+	if m.Codec == nil && len(m.Codecs) > 0 {
+		m.Codec = m.Codecs[0]
+	}
+
+	if m.Codec == nil {
+		return fmt.Errorf("no codec available for sending")
+	}
+
+	// Reverse direction: if remote says recvonly (they receive), we sendonly (we send)
+	m.Direction = m.Direction.Reverse()
+
+	return nil
+}
+
 // NewScreenshareMediaFromCodec creates a screenshare SDPMedia using the given codec.
 // This preserves the codec's PayloadType for compatibility with SIP devices that
 // require consistent payload types between camera and content streams.
