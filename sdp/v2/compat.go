@@ -2,6 +2,7 @@ package v2
 
 import (
 	"net/netip"
+	"strings"
 
 	"github.com/livekit/media-sdk/rtp"
 	v1 "github.com/livekit/media-sdk/sdp"
@@ -40,7 +41,7 @@ func (s *SDP) V1MediaConfig(remote netip.AddrPort) (v1.MediaConfig, error) {
 
 	// Look for DTMF codec
 	for _, codec := range audio.Codecs {
-		if codec.Name == "telephone-event" {
+		if strings.HasPrefix(codec.Name, "telephone-event") {
 			cfg.Audio.DTMFType = codec.PayloadType
 			break
 		}
