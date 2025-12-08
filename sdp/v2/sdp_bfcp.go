@@ -11,12 +11,10 @@ import (
 
 // FromPion parses BFCP attributes from a pion MediaDescription.
 func (b *SDPBfcp) FromPion(md sdp.MediaDescription) error {
-	// Validate media type is application
 	if md.MediaName.Media != "application" {
 		return fmt.Errorf("expected application media, got %s", md.MediaName.Media)
 	}
 
-	// Validate protocol contains BFCP
 	proto := strings.Join(md.MediaName.Protos, "/")
 	if !strings.Contains(strings.ToUpper(proto), "BFCP") {
 		return fmt.Errorf("expected BFCP protocol, got %s", proto)
@@ -26,7 +24,6 @@ func (b *SDPBfcp) FromPion(md sdp.MediaDescription) error {
 	b.Disabled = b.Port == 0
 	b.Proto = BfcpProto(proto)
 
-	// Parse attributes
 	for _, attr := range md.Attributes {
 		switch attr.Key {
 		case "setup":
@@ -69,7 +66,6 @@ func (b *SDPBfcp) parseFloorID(value string) {
 
 // ToPion converts SDPBfcp to a pion MediaDescription.
 func (b *SDPBfcp) ToPion() (sdp.MediaDescription, error) {
-	// Build attributes
 	attrs := []sdp.Attribute{
 		{Key: "setup", Value: string(b.Setup)},
 		{Key: "connection", Value: string(b.Connection)},
@@ -78,14 +74,12 @@ func (b *SDPBfcp) ToPion() (sdp.MediaDescription, error) {
 		{Key: "userid", Value: fmt.Sprintf("%d", b.UserID)},
 	}
 
-	// Add floorid with optional mstrm association
 	floorValue := fmt.Sprintf("%d", b.FloorID)
 	if b.MStreamID > 0 {
 		floorValue = fmt.Sprintf("%d mstrm:%d", b.FloorID, b.MStreamID)
 	}
 	attrs = append(attrs, sdp.Attribute{Key: "floorid", Value: floorValue})
 
-	// Parse protocol parts
 	protos := []string{"TCP", "BFCP"}
 	if b.Proto == BfcpProtoTCPTLS {
 		protos = []string{"TCP", "TLS", "BFCP"}
