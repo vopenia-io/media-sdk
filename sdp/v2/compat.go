@@ -47,8 +47,6 @@ func (s *SDP) V1MediaConfig(remote netip.AddrPort) (v1.MediaConfig, error) {
 		}
 	}
 
-	// Set addresses
-	// Local address comes from the Session's Addr field
 	if s.Addr.IsValid() {
 		cfg.Local = netip.AddrPortFrom(s.Addr, audio.Port)
 	}

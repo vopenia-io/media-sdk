@@ -185,7 +185,6 @@ func BuildReInviteOffer(cfg *ReInviteConfig) (*SDP, []byte, error) {
 	builder := (&SDP{}).Builder()
 	builder.SetAddress(cfg.LocalAddr)
 
-	// Build audio m-line if present
 	if cfg.Audio != nil && cfg.Audio.Codec != nil {
 		builder.SetAudio(func(b *SDPMediaBuilder) (*SDPMedia, error) {
 			b.AddCodec(func(_ *CodecBuilder) (*Codec, error) {
@@ -199,7 +198,6 @@ func BuildReInviteOffer(cfg *ReInviteConfig) (*SDP, []byte, error) {
 		})
 	}
 
-	// Build main video m-line with content:main and label:1 (required for Poly)
 	builder.SetVideo(func(b *SDPMediaBuilder) (*SDPMedia, error) {
 		if cfg.Video.Codec != nil {
 			b.AddCodec(func(_ *CodecBuilder) (*Codec, error) {
@@ -215,7 +213,6 @@ func BuildReInviteOffer(cfg *ReInviteConfig) (*SDP, []byte, error) {
 		return b.Build()
 	})
 
-	// Build screenshare/content m-line with content:slides and label:3
 	builder.SetScreenshare(func(b *SDPMediaBuilder) (*SDPMedia, error) {
 		if cfg.Screenshare.Codec != nil {
 			b.AddCodec(func(_ *CodecBuilder) (*Codec, error) {
@@ -226,9 +223,7 @@ func BuildReInviteOffer(cfg *ReInviteConfig) (*SDP, []byte, error) {
 		b.SetRTPPort(cfg.Screenshare.RTPPort)
 		b.SetRTCPPort(cfg.Screenshare.RTCPPort)
 		b.SetDirection(cfg.Screenshare.Direction)
-		// content:slides is set automatically by SetScreenshare
-		// Set label to match BFCP floorid mstrm association
-		label := uint16(3) // Default label for content
+		label := uint16(3)
 		if cfg.BFCP != nil && cfg.BFCP.MStreamID > 0 {
 			label = cfg.BFCP.MStreamID
 		}
@@ -236,7 +231,6 @@ func BuildReInviteOffer(cfg *ReInviteConfig) (*SDP, []byte, error) {
 		return b.Build()
 	})
 
-	// Build SDP without BFCP first
 	sdpOffer, err := builder.Build()
 	if err != nil {
 		return nil, nil, fmt.Errorf("build SDP: %w", err)
@@ -278,12 +272,10 @@ func MarshalReInviteOffer(sdp *SDP, bfcpBytes []byte) ([]byte, error) {
 		return nil, fmt.Errorf("SDP is nil")
 	}
 
-	// If no BFCP, just marshal normally
 	if len(bfcpBytes) == 0 {
 		return sdp.Marshal()
 	}
 
-	// Marshal SDP to bytes
 	sdpBytes, err := sdp.Marshal()
 	if err != nil {
 		return nil, fmt.Errorf("marshal SDP: %w", err)
@@ -332,7 +324,6 @@ func findMLineIndex(sdp string, mline string, startOffset int) int {
 	if idx == -1 {
 		return -1
 	}
-	// Return index after the newline
 	return startOffset + idx + len(searchStr) - len(mline)
 }
 

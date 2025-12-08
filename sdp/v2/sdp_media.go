@@ -289,13 +289,13 @@ func (m *SDPMedia) ToPion() (sdp.MediaDescription, error) {
 			Key: "rtcp", Value: strconv.Itoa(int(m.RTCPPort)),
 		})
 	}
-	// Add content attribute for video (RFC 4796)
+	// RFC 4796
 	if m.Content != "" {
 		attrs = append(attrs, sdp.Attribute{
 			Key: "content", Value: string(m.Content),
 		})
 	}
-	// Add label attribute for BFCP floor association (RFC 4796)
+	// RFC 4796
 	if m.Label > 0 {
 		attrs = append(attrs, sdp.Attribute{
 			Key: "label", Value: strconv.Itoa(int(m.Label)),
